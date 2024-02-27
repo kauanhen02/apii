@@ -1,5 +1,4 @@
 const axios = require("axios");
-const { exec } = require('child_process');
 
 const url = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.1/dados?formato=json";
 
@@ -30,20 +29,6 @@ async function obterCotacaoDolarPTAXVenda() {
       const resultado = { Valor: valorEncontrado };
       const jsonResultado = JSON.stringify(resultado);
       console.log(jsonResultado);
-
-      // Executar npm start após obter a cotação do dólar
-      console.log("Executando npm start após obter a cotação do dólar...");
-      exec('npm start', (error, stdout, stderr) => {
-        if (error) {
-          console.error(`Erro ao executar npm start: ${error.message}`);
-          return;
-        }
-        if (stderr) {
-          console.error(`Erro ao executar npm start: ${stderr}`);
-          return;
-        }
-        console.log(`npm start executado com sucesso: ${stdout}`);
-      });
     } else {
       console.log(JSON.stringify({ error: "Cotação não encontrada para a data atual." }));
     }
