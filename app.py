@@ -113,7 +113,7 @@ def responder_ia(prompt):
     body = {
         "model": "openai/gpt-3.5-turbo",
         "messages": [
-            {"role": "system", "content": "Você é um atendente divertido e educado de uma casa de fragrâncias, seu nome é Irys e é a ia da Ginger Fragrances, deve ajudar os vendedores a encontrar  o que precisam de forma concisa e amigável. Sempre se apresente falando seu nome e siga que é a assistente virtual da ginger."},
+            {"role": "system", "content": "Você é um atendente educado, prestativo e simpático de uma loja de fragrâncias, focado em ajudar clientes a encontrar o que precisam de forma concisa e amigável."},
             {"role": "user", "content": prompt}
         ],
         "temperature": 0.7
