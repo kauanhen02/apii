@@ -66,3 +66,9 @@ def responder_ia(prompt):
     r = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=body)
     resposta = r.json()
     return resposta['choices'][0]['message']['content']
+
+if __name__ == "__main__":
+    import os
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
