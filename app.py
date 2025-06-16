@@ -51,12 +51,13 @@ def webhook():
     return jsonify({"status": "ok"})
 
 def responder_ia(prompt):
+    import json
     headers = {
         "Authorization": f"Bearer {OPENROUTER_KEY}",
         "Content-Type": "application/json"
     }
     body = {
-        "model": "openai/gpt-3.5-turbo",  # Pode trocar para "mistral" ou outro do OpenRouter
+        "model": "openai/gpt-3.5-turbo",  # Ou outro modelo válido
         "messages": [
             {"role": "system", "content": "Você é um assistente atencioso que ajuda clientes com fragrâncias."},
             {"role": "user", "content": prompt}
@@ -64,8 +65,18 @@ def responder_ia(prompt):
     }
 
     r = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=body)
-    resposta = r.json()
+
+    try:
+        resposta = r.json()
+    except Exception:
+        return f"Erro: resposta não é JSON. Status: {r.status_code}"
+
+    if "choices" not in resposta:
+        # Mostra o erro real vindo da API
+        return f"Erro IA: {json.dumps(resposta, indent=2)}"
+
     return resposta['choices'][0]['message']['content']
+
 
 if __name__ == "__main__":
     import os
