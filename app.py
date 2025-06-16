@@ -52,7 +52,7 @@ def webhook():
     try:
         if any(p in msg for p in ["fragrância", "fragrancia", "produto", "tem com", "contém", "cheiro", "com"]):
             try:
-                r = requests.get("https://oracle-teste-1.onrender.com/produtos", timeout=10)
+                r = requests.get("https://oracle-teste-1.onrender.com/produtos", timeout=100)
                 r.raise_for_status()
                 produtos = r.json()
                 logging.info("✔️ Produtos consultados com sucesso da API externa.")
