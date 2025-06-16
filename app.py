@@ -10,39 +10,37 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 app = Flask(__name__)
 
 # Chaves de API vindas das variáveis de ambiente
-# É fundamental que estas variáveis estejam definidas no ambiente onde o app roda
 OPENROUTER_KEY = os.environ.get("OPENROUTER_KEY")
 ULTRAMSG_TOKEN = os.environ.get("ULTRAMSG_TOKEN")
 
 if not OPENROUTER_KEY:
     logging.error("❌ OPENROUTER_KEY não definida. Defina como variável de ambiente para que o app funcione.")
-    exit(1) # Sai se a chave essencial não estiver presente
+    exit(1)
 
 if not ULTRAMSG_TOKEN:
     logging.error("❌ ULTRAMSG_TOKEN não definida. Defina como variável de ambiente para que o app funcione.")
-    exit(1) # Sai se a chave essencial não estiver presente
+    exit(1)
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.json
     
-    # --- MUDANÇA CRÍTICA AQUI ---
-    # Loga o payload JSON bruto recebido para depuração
+    # Loga o payload JSON bruto recebido para depuração (MANTENHA ESTA LINHA!)
     logging.info(f"✨ Payload JSON bruto recebido da UltraMsg: {json.dumps(data, indent=2)}")
-    # --- FIM DA MUDANÇA CRÍTICA ---
 
     if not data:
         logging.warning("⚠️ Requisição sem JSON no corpo. Verifique a configuração do webhook na UltraMsg.")
         return jsonify({"status": "error", "message": "Requisição sem JSON"}), 400
 
-    # --- POTENCIAL PONTO DE AJUSTE APÓS VERIFICAR O LOG ---
-    # Adapte estas linhas com base no 'Payload JSON bruto recebido' no seu log.
-    # Se 'body' e 'from' estiverem dentro de um dicionário 'data' (ex: data['data']['body']),
-    # você precisaria fazer: data_content = data.get("data", {}); msg = data_content.get("body", "")
-    # Os exemplos abaixo assumem que 'body' e 'from' estão no nível raiz do JSON.
-    msg = data.get("body", "").strip().lower()
-    numero = data.get("from", "").strip()
-    # --- FIM DO POTENCIAL PONTO DE AJUSTE ---
+    # --- MUDANÇA ESSENCIAL AQUI ---
+    # Primeiro, acesse o objeto 'data' dentro do payload principal
+    ultramsg_data = data.get("data", {}) # Se 'data' não existir, retorna um dicionário vazio
+    
+    # Agora, acesse 'body' e 'from' DENTRO de 'ultramsg_data'
+    msg = ultramsg_data.get("body", "").strip().lower()
+    # O número vem como "5519993480072@c.us". Vamos remover o "@c.us" para ficar só o número.
+    numero = ultramsg_data.get("from", "").replace("@c.us", "").strip()
+    # --- FIM DA MUDANÇA ESSENCIAL ---
 
     if not msg or not numero:
         logging.warning(f"⚠️ Campos 'body' ou 'from' ausentes ou vazios no payload. Body: '{msg}', From: '{numero}'. Verifique o formato do JSON da UltraMsg.")
@@ -52,19 +50,17 @@ def webhook():
     resposta_final = ""
 
     try:
-        # Verifica se a mensagem contém termos relacionados a fragrâncias/produtos
         if any(p in msg for p in ["fragrância", "fragrancia", "produto", "tem com", "contém", "cheiro", "com"]):
             try:
-                # Timeout adicionado para a requisição de produtos
                 r = requests.get("https://oracle-teste.onrender.com/produtos", timeout=10)
-                r.raise_for_status() # Lança um erro para status HTTP 4xx/5xx
+                r.raise_for_status()
                 produtos = r.json()
                 logging.info("✔️ Produtos consultados com sucesso da API externa.")
             except requests.exceptions.RequestException as e:
                 logging.error(f"❌ Erro ao consultar produtos da API externa: {e}", exc_info=True)
                 resposta_final = "Desculpe, não consegui consultar nossos produtos no momento. Por favor, tente novamente mais tarde!"
                 enviar_resposta_ultramsg(numero, resposta_final)
-                return jsonify({"status": "ok"}) # Retorna após enviar a mensagem de erro ao usuário
+                return jsonify({"status": "ok"})
 
             palavras_chave = [p for p in msg.split() if len(p) > 2]
             achados = []
@@ -74,33 +70,26 @@ def webhook():
                 codigo = prod.get("PRO_IN_CODIGO", "")
                 if any(termo in descricao for termo in palavras_chave):
                     achados.append(f"{codigo} - {descricao}")
-                    # Limita a busca aos 5 primeiros resultados para o prompt da IA
                     if len(achados) >= 5:
                         break
 
             if not achados:
                 resposta_final = "Nenhum produto encontrado com base na sua descrição. Você gostaria de tentar com outras palavras-chave ou nos dar mais detalhes?"
             else:
-                # Usamos chr(10) para uma nova linha no prompt da IA
                 prompt = f"Com base nesses produtos:\n{chr(10).join(achados)}\nResponda ao cliente de forma simpática e resumida, dizendo o que foi encontrado e convidando-o a perguntar sobre outros produtos se não encontrar o que busca."
                 resposta_final = responder_ia(prompt)
         else:
-            # Se não for uma pergunta sobre fragrâncias/produtos, a IA responde de forma geral
-            prompt = f"Mensagem do cliente: '{msg}'. Responda como se fosse um atendente simpático de uma loja de fragrâncias, convidando o cliente a perguntar sobre produtos ou fragrâncias específicas."
+            prompt = f"Mensagem do cliente: '{msg}'. Responda como se fosse um atendente simpático de uma loja de fragrâncias."
             resposta_final = responder_ia(prompt)
 
     except Exception as e:
         logging.error(f"❌ Erro inesperado durante o processamento da mensagem: {e}", exc_info=True)
         resposta_final = "Desculpe, ocorreu um erro interno inesperado. Nossos atendentes já foram notificados e em breve resolveremos!"
 
-    # Envia a resposta final via UltraMsg
     enviar_resposta_ultramsg(numero, resposta_final)
     return jsonify({"status": "ok"})
 
 def enviar_resposta_ultramsg(numero, body):
-    """
-    Função auxiliar para enviar respostas via UltraMsg.
-    """
     try:
         resp = requests.post(
             "https://api.ultramsg.com/instance121153/messages/chat",
@@ -109,35 +98,30 @@ def enviar_resposta_ultramsg(numero, body):
                 "to": numero,
                 "body": body
             },
-            timeout=10 # Timeout para a requisição UltraMsg
+            timeout=10
         )
-        resp.raise_for_status() # Lança um erro para status HTTP 4xx/5xx
+        resp.raise_for_status()
         logging.info(f"✅ Resposta enviada para {numero}. UltraMsg retornou: {resp.text}")
     except requests.exceptions.RequestException as e:
         logging.error(f"❌ Erro ao enviar resposta via UltraMsg para {numero}: {e}", exc_info=True)
-        # Não precisa retornar mensagem para o usuário aqui, pois já foi tratada no webhook principal
 
 def responder_ia(prompt):
-    """
-    Função auxiliar para interagir com a API da OpenRouter (IA).
-    """
     headers = {
         "Authorization": f"Bearer {OPENROUTER_KEY}",
         "Content-Type": "application/json"
     }
     body = {
-        "model": "openai/gpt-3.5-turbo", # Ou outro modelo da OpenRouter de sua preferência (e.g., 'mistralai/mistral-7b-instruct-v0.1')
+        "model": "openai/gpt-3.5-turbo",
         "messages": [
             {"role": "system", "content": "Você é um atendente educado, prestativo e simpático de uma loja de fragrâncias, focado em ajudar clientes a encontrar o que precisam de forma concisa e amigável."},
             {"role": "user", "content": prompt}
         ],
-        "temperature": 0.7 # Ajuste a temperatura para controlar a criatividade da IA (0.0 a 1.0)
+        "temperature": 0.7
     }
 
     try:
-        # Timeout para a requisição da IA
         r = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=body, timeout=30)
-        r.raise_for_status() # Lança um erro para status HTTP 4xx/5xx
+        r.raise_for_status()
         resposta = r.json()
 
         if "choices" not in resposta or not resposta['choices']:
