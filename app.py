@@ -5,7 +5,7 @@ import os
 
 app = Flask(__name__)
 
-OPENROUTER_KEY = "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"
+GEMINI_API_KEY = "AIzaSyAvtuZM5nOQFHZvxTjhxUWfB6bkIX4XEb4"
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -21,7 +21,6 @@ def webhook():
             r = requests.get("https://oracle-teste.onrender.com/produtos")
             produtos = r.json()
 
-            # Filtra com base na descrição
             palavras_chave = [p for p in msg.split() if len(p) > 2]
             achados = []
             for prod in produtos:
@@ -36,10 +35,10 @@ def webhook():
                 resposta_final = "Nenhum produto encontrado com base na sua descrição."
             else:
                 prompt = f"Com base nesses produtos:\n{achados[:5]}\nResponda ao cliente de forma simpática e resumida, dizendo o que foi encontrado."
-                resposta_final = responder_ia(prompt)
+                resposta_final = responder_com_gemini(prompt)
         else:
             prompt = f"Mensagem recebida: '{msg}'. Responda como se fosse um atendente simpático em uma loja de fragrâncias."
-            resposta_final = responder_ia(prompt)
+            resposta_final = responder_com_gemini(prompt)
 
     except Exception as e:
         print("Erro ao processar mensagem:", str(e))
@@ -59,31 +58,28 @@ def webhook():
 
     return jsonify({"status": "ok"})
 
-def responder_ia(prompt):
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_KEY}",
-        "Content-Type": "application/json"
-    }
+
+def responder_com_gemini(prompt):
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
+
+    headers = { "Content-Type": "application/json" }
     body = {
-        "model": "openai/gpt-3.5-turbo",
-        "messages": [
-            {"role": "system", "content": "Você é um assistente atencioso que ajuda clientes com fragrâncias."},
-            {"role": "user", "content": prompt}
+        "contents": [
+            {
+                "parts": [{ "text": prompt }]
+            }
         ]
     }
 
-    r = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=body)
-    
+    response = requests.post(url, headers=headers, json=body)
+
     try:
-        resposta = r.json()
-    except Exception:
-        return f"Erro: resposta não é JSON. Status: {r.status_code}"
+        resposta = response.json()
+        return resposta["candidates"][0]["content"]["parts"][0]["text"]
+    except Exception as e:
+        print("Erro na resposta do Gemini:", resposta)
+        return "Desculpe, houve um problema ao responder."
 
-    if "choices" not in resposta:
-        print("Erro da IA:", json.dumps(resposta, indent=2))
-        return "Desculpe, houve um erro ao gerar a resposta da IA."
-
-    return resposta['choices'][0]['message']['content']
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
