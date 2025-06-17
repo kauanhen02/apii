@@ -4,7 +4,7 @@ import json
 import os
 import logging
 import threading
-
+from googleapiclient.discovery import build # Importa para Google Custom Search API
 
 # Configuração de logs
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -15,9 +15,10 @@ app = Flask(__name__)
 OPENROUTER_KEY = os.environ.get("OPENROUTER_KEY")
 ULTRAMSG_TOKEN = os.environ.get("ULTRAMSG_TOKEN")
 
-# --- MUDANÇA AQUI: NOMES DAS VARIÁVEIS GOOGLE AJUSTADOS PARA MIXED CASE COM UNDERSCORES ---
-Google_Search_API_KEY = os.environ.get("Google_Search_API_KEY") # Ajustado para corresponder ao Render
-Google_Search_CX = os.environ.get("Google_Search_CX")         # Ajustado para corresponder ao Render
+# --- MUDANÇA AQUI: Nomes das variáveis de ambiente (case-sensitive) ---
+# O nome usado em os.environ.get() DEVE ser EXATAMENTE igual ao nome no Render.com
+Google Search_API_KEY_VAR = os.environ.get("Google Search_API_KEY")
+Google Search_CX_VAR = os.environ.get("Google Search_CX")
 # --- FIM DA MUDANÇA ---
 
 if not OPENROUTER_KEY:
@@ -28,19 +29,18 @@ if not ULTRAMSG_TOKEN:
     logging.error("❌ ULTRAMSG_TOKEN não definida. Defina como variável de ambiente para que o app funcione.")
     exit(1)
 
-# Verificação das chaves do Google Search. Mantenha isso.
-if not Google_Search_API_KEY or not Google_Search_CX:
-    logging.error("❌ Variáveis Google_Search_API_KEY ou Google_Search_CX não definidas. A pesquisa web não funcionará.")
+# --- MUDANÇA AQUI: Verifica as novas variáveis (case-sensitive) ---
+if not Google Search_API_KEY_VAR or not Google Search_CX_VAR:
+    logging.error("❌ Variáveis Google Search_API_KEY ou Google Search_CX não definidas. A pesquisa web não funcionará.")
     exit(1)
 
 
-# Função para realizar a pesquisa web com Google Custom Search (usando googleapiclient)
-from googleapiclient.discovery import build
-
+# Função para realizar a pesquisa web com Google Custom Search
 def perform_google_custom_search(query):
     try:
-        service = build("customsearch", "v1", developerKey=Google_Search_API_KEY)
-        res = service.cse().list(q=query, cx=Google_Search_CX, num=3).execute() # num=3 para 3 resultados
+        # Usa as variáveis com os nomes exatos lidos do ambiente
+        service = build("customsearch", "v1", developerKey=Google Search_API_KEY_VAR)
+        res = service.cse().list(q=query, cx=Google Search_CX_VAR, num=3).execute() # num=3 para 3 resultados
         
         snippets = []
         if 'items' in res:
@@ -97,7 +97,7 @@ Por favor, como a Iris, a assistente virtual super animada da Ginger Fragrances,
         # Se a mensagem NÃO é sobre fragrâncias/produtos, tenta pesquisa web
         else:
             search_query = msg
-            snippets = perform_google_custom_search(search_query) # Chama a função de pesquisa web
+            snippets = perform_google_custom_search(search_query) # Chama a nova função de pesquisa web
             
             search_results_text = ""
             if snippets:
