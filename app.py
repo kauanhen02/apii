@@ -388,7 +388,7 @@ def webhook():
 def enviar_resposta_ultramsg(numero, body):
     try:
         resp = requests.post(
-            "https://api.ultramsg.com/instance121153/messages/chat",
+            "https://api.ultramsg.com/instance126332/messages/chat",
             data={
                 "token": ULTRAMSG_TOKEN,
                 "to": numero,
