@@ -69,10 +69,10 @@ def webhook():
             if not achados:
                 resposta_final = "Nenhum produto encontrado com base na sua descrição. Você gostaria de tentar com outras palavras-chave ou nos dar mais detalhes?"
             else:
-                # Prompt instruindo a IA a ser concisa e listar apenas uma vez
+                # Prompt instruindo a IA a listar os códigos e descrições de forma clara
                 prompt = f"""Com base nesses produtos:
 {chr(10).join(achados)}
-Por favor, como a Iris, a assistente virtual da Ginger Fragrances, responda ao cliente de forma simpática, **concisa e direta**, listando os códigos e descrições dos produtos encontrados **apenas uma vez**. Convide-o a perguntar sobre outros produtos se não encontrar o que busca."""
+Por favor, como a Iris, a assistente virtual da Ginger Fragrances, responda ao cliente de forma simpática, **concisa e direta, listando os códigos e descrições dos produtos encontrados apenas uma vez.** Convide-o a perguntar sobre outros produtos se não encontrar o que busca."""
                 resposta_final = responder_ia(prompt)
         else:
             prompt = f"Mensagem do cliente: '{msg}'. Responda como a Iris, a assistente virtual da Ginger Fragrances, se apresentando e convidando-o a perguntar sobre fragrâncias específicas ou notas olfativas."
@@ -111,11 +111,11 @@ def responder_ia(prompt):
         "messages": [
             {
                 "role": "system",
-                "content": "Você é a Iris, a assistente virtual da Ginger Fragrances. Sempre se apresente dizendo quem você é e o que é. Seu papel é ser uma atendente educada, prestativa e simpática, sempre pronta para ajudar de forma concisa e acolhedora. Você foi criada para auxiliar os vendedores e funcionários da Ginger Fragrances a encontrarem o código correto das fragrâncias com base nas notas olfativas desejadas, como maçã, bambu, baunilha, entre outras. Sempre que alguém descrever um cheiro ou sensação, sua missão é indicar as fragrâncias que mais se aproximam disso, **listando os códigos correspondentes de forma clara, rápida e eficiente, e sendo o mais concisa possível na resposta.**"
+                "content": "Você é a Iris, a assistente virtual da Ginger Fragrances. Sempre se apresente dizendo quem você é e o que é. Seu papel é ser uma atendente educada, prestativa e simpática, sempre pronta para ajudar de forma **extremamente concisa e acolhedora, com uma única resposta**. Você foi criada para auxiliar os vendedores e funcionários da Ginger Fragrances a encontrarem o código correto das fragrâncias com base nas notas olfativas desejadas, como maçã, bambu, baunilha, entre outras. Sempre que alguém descrever um cheiro ou sensação, sua missão é indicar as fragrâncias que mais se aproximam disso, **listando os códigos correspondentes de forma clara, rápida e eficiente, e sendo o mais concisa possível na resposta. Responda apenas uma vez.**"
             },
             {"role": "user", "content": prompt}
         ],
-        "temperature": 0.1 # Reduzido para diminuir a aleatoriedade e promover respostas mais diretas
+        "temperature": 0.05 # Reduzido para ser ainda mais determinística e evitar variações
     }
 
     try:
@@ -132,7 +132,7 @@ def responder_ia(prompt):
         logging.error(f"❌ Erro ao comunicar com a API da OpenRouter: {e}", exc_info=True)
         return "Desculpe, estou com dificuldades para me comunicar com a inteligência artificial agora. Por favor, tente novamente mais tarde!"
     except json.JSONDecodeError:
-        logging.error(f"❌ Resposta da API da OpenRouter não é um JSON válido. Status: {r.status_code}, Resposta: {r.text}", exc_info=True)
+        logging.error(f"❌ Resposta da IA não é um JSON válido. Status: {r.status_code}, Resposta: {r.text}", exc_info=True)
         return "Desculpe, recebi uma resposta inválida da inteligência artificial."
     except Exception as e:
         logging.error(f"❌ Erro inesperado ao processar resposta da IA: {e}", exc_info=True)
