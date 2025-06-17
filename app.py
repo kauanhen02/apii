@@ -4,6 +4,7 @@ import json
 import os
 import logging
 import threading
+from Google Search import search # Importa a ferramenta de pesquisa web
 
 # Configuração de logs
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -28,6 +29,7 @@ def processar_mensagem_em_segundo_plano(ultramsg_data, numero, msg):
     resposta_final = ""
 
     try:
+        # Se a mensagem contém termos relacionados a fragrâncias/produtos
         if any(p in msg for p in ["fragrância", "fragrancia", "produto", "tem com", "contém", "cheiro", "com"]):
             try:
                 # Timeout ajustado para 100 segundos
@@ -37,7 +39,7 @@ def processar_mensagem_em_segundo_plano(ultramsg_data, numero, msg):
                 logging.info("✔️ Produtos consultados com sucesso da API externa.")
             except requests.exceptions.RequestException as e:
                 logging.error(f"❌ Erro ao consultar produtos da API externa: {e}", exc_info=True)
-                resposta_final = "Oh-oh! 😟 Parece que não consegui acessar nossos produtos agora. O universo das fragrâncias está um pouquinho tímido! Que tal tentar de novo mais tarde, ou me contar mais sobre o que você procura? Estou aqui pra ajudar! ✨"
+                resposta_final = "Oh-oh! 😟 Parece que não consegui acessar nossos produtos agora. O universo das fragrâncias está um pouquinho tímido. Que tal tentar de novo mais tarde, ou me contar mais sobre o que você procura? Estou aqui pra ajudar! ✨"
                 enviar_resposta_ultramsg(numero, resposta_final)
                 return # Sai da função de segundo plano
 
@@ -48,21 +50,46 @@ def processar_mensagem_em_segundo_plano(ultramsg_data, numero, msg):
                 descricao = prod.get("PRO_ST_DESCRICAO", "").lower()
                 codigo = prod.get("PRO_IN_CODIGO", "")
                 if any(termo in descricao for termo in palavras_chave):
-                    achados.append(f"Código: {codigo} - Descrição: {descricao}")
+                    achados.append(f"Código: {codigo} - Descrição: {descricao}") # Formato mais claro para IA
                     if len(achados) >= 5:
                         break
 
             if not achados:
-                resposta_final = "Que pena! 😔 Não encontrei nenhuma fragrância com essa descrição. Mas não desanime! Nossos produtos são um universo de aromas! Que tal tentar com outras palavras-chave ou me dar mais detalhes sobre o cheiro que você imagina? Estou pronta para a próxima busca! 🕵️‍♀️💖"
+                resposta_final = "Que pena! 😔 Não encontrei nenhuma fragrância com essa descrição. Mas não desanime! Nossos produtos são um universo de aromas. Que tal tentar com outras palavras-chave ou me dar mais detalhes sobre o cheiro que você imagina? Estou pronta para a próxima busca! 🕵️‍♀️💖"
             else:
-                # Prompt instruindo a IA a listar os códigos e descrições de forma clara e vibrante
                 prompt = f"""Com base nestes produtos incríveis que encontrei para você:
 {chr(10).join(achados)}
-Por favor, como a Iris, a assistente virtual super animada da Ginger Fragrances, responda ao cliente de forma **super simpática, vibrante e concisa**, listando os códigos e descrições dos produtos encontrados **apenas uma vez, em um formato divertido e fácil de ler**! Convide-o com entusiasmo a perguntar sobre outras maravilhas perfumadas se ainda não for exatamente o que ele busca! ✨"""
+Por favor, como a Iris, a assistente virtual da Ginger Fragrances, responda ao cliente de forma **simpática, acolhedora e concisa**, listando os códigos e descrições dos produtos encontrados **apenas uma vez, em um formato claro e fácil de ler**! Convide-o com entusiasmo a perguntar sobre outras maravilhas perfumadas se ainda não for exatamente o que ele busca! ✨"""
                 resposta_final = responder_ia(prompt)
+        # Se a mensagem NÃO é sobre fragrâncias/produtos, tenta pesquisa web
         else:
-            # Prompt para mensagens genéricas, mantendo a persona da Iris
-            prompt = f"Mensagem do cliente: '{msg}'. Responda como a Iris, a assistente virtual da Ginger Fragrances! Seja muito animada e acolhedora, e convide o cliente a mergulhar no nosso mundo de fragrâncias, perguntando sobre aromas específicos ou o que mais ele quiser saber! 💖"
+            search_query = msg
+            search_results_text = ""
+            try:
+                logging.info(f"🌐 [Web Search] Iniciando pesquisa web para: '{search_query}'")
+                search_results = search(queries=[search_query]) # Chama a ferramenta de busca web
+                
+                snippets = []
+                if search_results and search_results[0].results:
+                    for i, result in enumerate(search_results[0].results):
+                        if result.snippet:
+                            snippets.append(f"[{i+1}] {result.snippet} (Fonte: {result.source_title if result.source_title else 'N/A'})")
+                    if snippets:
+                        search_results_text = "\n".join(snippets[:3]) # Limita aos 3 snippets principais
+
+            except Exception as e:
+                logging.error(f"❌ Erro na pesquisa web: {e}", exc_info=True)
+                search_results_text = "Ops! Tive um pequeno problema para fazer a pesquisa na web no momento. 😔"
+
+            if search_results_text:
+                prompt = f"""Mensagem do cliente: '{msg}'.
+                Informações da web encontradas:
+                {search_results_text}
+                
+                Com base na mensagem do cliente e nas informações da web (se relevantes), como a Iris, a assistente virtual da Ginger Fragrances, responda de forma simpática, animada e útil. Se a pergunta for geral, use as informações da web para responder de forma concisa. Se for sobre fragrâncias e a pesquisa não ajudar a encontrar um produto específico, convide-o a perguntar sobre notas olfativas ou outros detalhes. Lembre-se de sua personalidade única e responda apenas uma vez! ✨"""
+            else:
+                prompt = f"Mensagem do cliente: '{msg}'. Responda como a Iris, a assistente virtual da Ginger Fragrances, se apresentando e convidando-o a perguntar sobre fragrâncias específicas ou notas olfativas. Parece que não encontrei informações adicionais na web para isso no momento. 🤔 Que tal explorar o mundo dos cheirinhos? 😊"
+            
             resposta_final = responder_ia(prompt)
 
     except Exception as e:
@@ -80,7 +107,7 @@ def webhook():
 
     if not data:
         logging.warning("⚠️ Requisição sem JSON no corpo. Verifique a configuração do webhook na UltraMsg.")
-        return jsonify({"status": "error", "message": "Requisição sem JSON"}), 400
+        return jsonify({"status": "error", "message": "Requisição sem JSON"}), 200 # Alterado para 200 OK para evitar reenvios
 
     ultramsg_data = data.get("data", {})
     msg = ultramsg_data.get("body", "").strip().lower()
@@ -124,11 +151,11 @@ def responder_ia(prompt):
         "messages": [
             {
                 "role": "system",
-                "content": "🎉 Olá! Eu sou a Iris, a assistente virtual super animada da Ginger Fragrances! ✨ Meu papel é ser sua melhor amiga no mundo dos aromas: sempre educada, prestativa, simpática e com um toque de criatividade! 💖 Fui criada para ajudar nossos incríveis vendedores e funcionários a encontrar rapidinho os códigos das fragrâncias com base nas notas olfativas que os clientes amam, tipo maçã 🍎, bambu 🎋, baunilha 🍦 e muito mais! Sempre que alguém descrever um cheirinho ou uma sensação, minha missão é indicar as fragrâncias mais próximas, **listando os códigos correspondentes de forma clara, única, rápida e super eficiente!** Vamos descobrir o aroma perfeito? 😊"
+                "content": "🎉 Olá! Eu sou a Iris, a assistente virtual da Ginger Fragrances! ✨ Meu papel é ser sua melhor amiga no mundo dos aromas: sempre educada, prestativa, simpática e com um toque de criatividade! 💖 Fui criada para ajudar nossos incríveis vendedores e funcionários a encontrar rapidinho os códigos das fragrâncias com base nas notas olfativas que os clientes amam, tipo maçã 🍎, bambu 🎋, baunilha 🍦 e muito mais! Além disso, eu posso **realizar pesquisas na web para te ajudar com perguntas mais gerais**! Sempre que alguém descrever um cheirinho ou uma sensação, minha missão é indicar as fragrâncias que mais se aproximam disso, **listando os códigos correspondentes de forma clara, única, rápida e super eficiente, e sendo o mais concisa possível na resposta. Responda apenas uma vez.** Vamos descobrir o aroma perfeito? 😊"
             },
             {"role": "user", "content": prompt}
         ],
-        "temperature": 0.4 # Aumentei um pouco para mais criatividade, mas mantendo o controle
+        "temperature": 0.3 # Ajustado para um equilíbrio entre criatividade e concisão
     }
 
     try:
