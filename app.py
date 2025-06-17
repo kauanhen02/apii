@@ -4,7 +4,7 @@ import json
 import os
 import logging
 import threading
-from Google Search import search # <-- CORREÇÃO AQUI: era 'Google Search', agora é 'Google Search'
+from Google Search import search # <-- CORREÇÃO: DEVE SER Google Search (com underscore)
 
 # Configuração de logs
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -15,6 +15,11 @@ app = Flask(__name__)
 OPENROUTER_KEY = os.environ.get("OPENROUTER_KEY")
 ULTRAMSG_TOKEN = os.environ.get("ULTRAMSG_TOKEN")
 
+# --- MUDANÇA AQUI: NOMES DAS VARIÁVEIS GOOGLE AJUSTADOS PARA MIXED CASE COM UNDERSCORES ---
+Google_Search_API_KEY = os.environ.get("Google_Search_API_KEY") # Ajustado para corresponder ao Render
+Google_Search_CX = os.environ.get("Google_Search_CX")         # Ajustado para corresponder ao Render
+# --- FIM DA MUDANÇA ---
+
 if not OPENROUTER_KEY:
     logging.error("❌ OPENROUTER_KEY não definida. Defina como variável de ambiente para que o app funcione.")
     exit(1)
@@ -22,6 +27,34 @@ if not OPENROUTER_KEY:
 if not ULTRAMSG_TOKEN:
     logging.error("❌ ULTRAMSG_TOKEN não definida. Defina como variável de ambiente para que o app funcione.")
     exit(1)
+
+# Verificação das chaves do Google Search. Mantenha isso.
+if not Google_Search_API_KEY or not Google_Search_CX:
+    logging.error("❌ Variáveis Google_Search_API_KEY ou Google_Search_CX não definidas. A pesquisa web não funcionará.")
+    exit(1)
+
+
+# Função para realizar a pesquisa web com Google Custom Search (usando googleapiclient)
+from googleapiclient.discovery import build
+
+def perform_google_custom_search(query):
+    try:
+        service = build("customsearch", "v1", developerKey=Google_Search_API_KEY)
+        res = service.cse().list(q=query, cx=Google_Search_CX, num=3).execute() # num=3 para 3 resultados
+        
+        snippets = []
+        if 'items' in res:
+            for item in res['items']:
+                if 'snippet' in item:
+                    title = item.get('title', 'Título indisponível')
+                    link = item.get('link', 'Link indisponível')
+                    snippet_text = item['snippet']
+                    snippets.append(f"- {title}: {snippet_text} (Fonte: {link})")
+        return snippets
+    except Exception as e:
+        logging.error(f"❌ Erro ao realizar pesquisa com Google Custom Search API: {e}", exc_info=True)
+        return []
+
 
 # Função para processar a mensagem em segundo plano
 def processar_mensagem_em_segundo_plano(ultramsg_data, numero, msg):
@@ -64,22 +97,11 @@ Por favor, como a Iris, a assistente virtual super animada da Ginger Fragrances,
         # Se a mensagem NÃO é sobre fragrâncias/produtos, tenta pesquisa web
         else:
             search_query = msg
+            snippets = perform_google_custom_search(search_query) # Chama a função de pesquisa web
+            
             search_results_text = ""
-            try:
-                logging.info(f"🌐 [Web Search] Iniciando pesquisa web para: '{search_query}'")
-                search_results = search(queries=[search_query]) # Chama a ferramenta de busca web
-                
-                snippets = []
-                if search_results and search_results[0].results:
-                    for i, result in enumerate(search_results[0].results):
-                        if result.snippet:
-                            snippets.append(f"[{i+1}] {result.snippet} (Fonte: {result.source_title if result.source_title else 'N/A'})")
-                    if snippets:
-                        search_results_text = "\n".join(snippets[:3]) # Limita aos 3 snippets principais
-
-            except Exception as e:
-                logging.error(f"❌ Erro na pesquisa web: {e}", exc_info=True)
-                search_results_text = "Ops! Tive um pequeno problema para fazer a pesquisa na web no momento. 😔"
+            if snippets:
+                search_results_text = "\n".join(snippets)
 
             if search_results_text:
                 prompt = f"""Mensagem do cliente: '{msg}'.
