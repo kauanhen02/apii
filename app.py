@@ -25,19 +25,14 @@ if not ULTRAMSG_TOKEN:
 def webhook():
     data = request.json
     
-    # Loga o payload JSON bruto recebido para depuração (MANTENHA ESTA LINHA!)
     logging.info(f"✨ Payload JSON bruto recebido da UltraMsg: {json.dumps(data, indent=2)}")
 
     if not data:
         logging.warning("⚠️ Requisição sem JSON no corpo. Verifique a configuração do webhook na UltraMsg.")
         return jsonify({"status": "error", "message": "Requisição sem JSON"}), 400
 
-    # Primeiro, acesse o objeto 'data' dentro do payload principal
-    ultramsg_data = data.get("data", {}) # Se 'data' não existir, retorna um dicionário vazio
-    
-    # Agora, acesse 'body' e 'from' DENTRO de 'ultramsg_data'
+    ultramsg_data = data.get("data", {})
     msg = ultramsg_data.get("body", "").strip().lower()
-    # O número vem como "5519993480072@c.us". Vamos remover o "@c.us" para ficar só o número.
     numero = ultramsg_data.get("from", "").replace("@c.us", "").strip()
 
     if not msg or not numero:
@@ -50,7 +45,6 @@ def webhook():
     try:
         if any(p in msg for p in ["fragrância", "fragrancia", "produto", "tem com", "contém", "cheiro", "com"]):
             try:
-                # Timeout ajustado para 100 segundos
                 r = requests.get("https://oracle-teste-1.onrender.com/produtos", timeout=100)
                 r.raise_for_status()
                 produtos = r.json()
@@ -68,18 +62,19 @@ def webhook():
                 descricao = prod.get("PRO_ST_DESCRICAO", "").lower()
                 codigo = prod.get("PRO_IN_CODIGO", "")
                 if any(termo in descricao for termo in palavras_chave):
-                    achados.append(f"Código: {codigo} - Descrição: {descricao}") # Formato mais claro para IA
+                    achados.append(f"Código: {codigo} - Descrição: {descricao}")
                     if len(achados) >= 5:
                         break
 
             if not achados:
                 resposta_final = "Nenhum produto encontrado com base na sua descrição. Você gostaria de tentar com outras palavras-chave ou nos dar mais detalhes?"
             else:
-                # Prompt instruindo a IA a listar os códigos e descrições de forma clara
-                prompt = f"Com base nesses produtos:\n{chr(10).join(achados)}\nPor favor, como a Iris, a assistente virtual da Ginger Fragrances, responda ao cliente de forma simpática e resumida, **listando os códigos e descrições dos produtos encontrados de forma clara e direta**. Convide-o a perguntar sobre outros produtos se não encontrar o que busca."
+                # Prompt instruindo a IA a ser concisa e listar apenas uma vez
+                prompt = f"""Com base nesses produtos:
+{chr(10).join(achados)}
+Por favor, como a Iris, a assistente virtual da Ginger Fragrances, responda ao cliente de forma simpática, **concisa e direta**, listando os códigos e descrições dos produtos encontrados **apenas uma vez**. Convide-o a perguntar sobre outros produtos se não encontrar o que busca."""
                 resposta_final = responder_ia(prompt)
         else:
-            # Prompt para mensagens genéricas, mantendo a persona da Iris
             prompt = f"Mensagem do cliente: '{msg}'. Responda como a Iris, a assistente virtual da Ginger Fragrances, se apresentando e convidando-o a perguntar sobre fragrâncias específicas ou notas olfativas."
             resposta_final = responder_ia(prompt)
 
@@ -116,11 +111,11 @@ def responder_ia(prompt):
         "messages": [
             {
                 "role": "system",
-                "content": "Você é a Iris, a assistente virtual da Ginger Fragrances, sempre se apresente dizendo quem você é e o que é. Seu papel é ser uma atendente educada, prestativa e simpática, sempre pronta para ajudar de forma concisa e acolhedora. Você foi criada para auxiliar os vendedores e funcionários da Ginger Fragrances a encontrarem o código correto das fragrâncias com base nas notas olfativas desejadas, como maçã, bambu, baunilha, entre outras. Sempre que alguém descrever um cheiro ou sensação, sua missão é indicar as fragrâncias que mais se aproximam disso, **listando os códigos correspondentes de forma clara, rápida e eficiente.**"
+                "content": "Você é a Iris, a assistente virtual da Ginger Fragrances. Sempre se apresente dizendo quem você é e o que é. Seu papel é ser uma atendente educada, prestativa e simpática, sempre pronta para ajudar de forma concisa e acolhedora. Você foi criada para auxiliar os vendedores e funcionários da Ginger Fragrances a encontrarem o código correto das fragrâncias com base nas notas olfativas desejadas, como maçã, bambu, baunilha, entre outras. Sempre que alguém descrever um cheiro ou sensação, sua missão é indicar as fragrâncias que mais se aproximam disso, **listando os códigos correspondentes de forma clara, rápida e eficiente, e sendo o mais concisa possível na resposta.**"
             },
             {"role": "user", "content": prompt}
         ],
-        "temperature": 0.7
+        "temperature": 0.1 # Reduzido para diminuir a aleatoriedade e promover respostas mais diretas
     }
 
     try:
