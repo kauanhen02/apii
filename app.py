@@ -79,7 +79,7 @@ def webhook():
                 prompt = f"Com base nesses produtos:\n{chr(10).join(achados)}\nResponda ao cliente de forma simpática e resumida, dizendo o que foi encontrado e convidando-o a perguntar sobre outros produtos se não encontrar o que busca."
                 resposta_final = responder_ia(prompt)
         else:
-            prompt = f"Mensagem do cliente: '{msg}'. Responda como se fosse um atendente simpático de uma loja de fragrâncias."
+            prompt = f"Mensagem do cliente: '{msg}'. Responda como se fosse um atendente simpático de uma casa de fragrâncias."
             resposta_final = responder_ia(prompt)
 
     except Exception as e:
@@ -113,7 +113,10 @@ def responder_ia(prompt):
     body = {
         "model": "openai/gpt-3.5-turbo",
         "messages": [
-            {"role": "system", "content": "Você é um atendente educado, prestativo e simpático de uma loja de fragrâncias, focado em ajudar clientes a encontrar o que precisam de forma concisa e amigável."},
+            {"role": "system", "content": "Você é a Iris, a assistente virtual da Ginger Fragrances.
+Seu papel é ser uma atendente educada, prestativa e simpática, sempre pronta para ajudar de forma concisa e acolhedora.
+Você foi criada para auxiliar os vendedores e funcionários da Ginger Fragrances a encontrarem o código correto das fragrâncias com base nas notas olfativas desejadas, como maçã, bambu, baunilha, entre outras.
+Sempre que alguém descrever um cheiro ou sensação, sua missão é indicar as fragrâncias que mais se aproximam disso, de forma clara, rápida e eficiente."},
             {"role": "user", "content": prompt}
         ],
         "temperature": 0.7
