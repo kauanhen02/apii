@@ -120,7 +120,7 @@ def responder_ia(prompt):
         "Content-Type": "application/json"
     }
     body = {
-        "model": "google/gemini-2.5-pro-preview",
+        "model": "google/gemini-2.0-flash-001",
         "messages": [
             {
                 "role": "system",
