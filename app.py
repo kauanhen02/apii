@@ -4,15 +4,22 @@ import json
 import os
 import logging
 import threading
+from googleapiclient.discovery import build # <-- REATIVADO: Importa para Google Custom Search API
 
 # Configuração de logs
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-app = Flask(__name__) # CORRIGIDO: __name__ com dois underscores
+app = Flask(__name__) # <-- CORRIGIDO: __name__ com dois underscores
 
 # Chaves de API vindas das variáveis de ambiente
 OPENROUTER_KEY = os.environ.get("OPENROUTER_KEY")
 ULTRAMSG_TOKEN = os.environ.get("ULTRAMSG_TOKEN")
+
+# --- REATIVADO: Variáveis para a API do Google Custom Search ---
+# Os nomes usados aqui DEVEM ser EXATAMENTE iguais aos nomes configurados no Render.com (case-sensitive)
+Google Search_API_KEY_VAR = os.environ.get("Google_Search_API_KEY") # Use este nome no Render.com
+Google Search_CX_VAR = os.environ.get("Google_Search_CX")         # Use este nome no Render.com
+# --- FIM DA REATIVAÇÃO ---
 
 if not OPENROUTER_KEY:
     logging.error("❌ OPENROUTER_KEY não definida. Defina como variável de ambiente para que o app funcione.")
@@ -21,6 +28,33 @@ if not OPENROUTER_KEY:
 if not ULTRAMSG_TOKEN:
     logging.error("❌ ULTRAMSG_TOKEN não definida. Defina como variável de ambiente para que o app funcione.")
     exit(1)
+
+# --- REATIVADO: Verificação das chaves do Google Search ---
+if not Google Search_API_KEY_VAR or not Google Search_CX_VAR:
+    logging.error("❌ Variáveis Google Search_API_KEY ou Google Search_CX não definidas. A pesquisa web não funcionará.")
+    exit(1)
+
+
+# --- REATIVADO: Função para realizar a pesquisa web com Google Custom Search ---
+def perform_google_custom_search(query):
+    try:
+        service = build("customsearch", "v1", developerKey=Google Search_API_KEY_VAR)
+        res = service.cse().list(q=query, cx=Google Search_CX_VAR, num=3).execute() # num=3 para 3 resultados
+        
+        snippets = []
+        if 'items' in res:
+            for item in res['items']:
+                if 'snippet' in item:
+                    title = item.get('title', 'Título indisponível')
+                    link = item.get('link', 'Link indisponível')
+                    snippet_text = item['snippet']
+                    snippets.append(f"- {title}: {snippet_text} (Fonte: {link})")
+        return snippets
+    except Exception as e:
+        logging.error(f"❌ Erro ao realizar pesquisa com Google Custom Search API: {e}", exc_info=True)
+        return []
+# --- FIM DA REATIVAÇÃO ---
+
 
 # Função para processar a mensagem em segundo plano
 def processar_mensagem_em_segundo_plano(ultramsg_data, numero, msg):
@@ -49,7 +83,7 @@ def processar_mensagem_em_segundo_plano(ultramsg_data, numero, msg):
                 descricao = prod.get("PRO_ST_DESCRICAO", "").lower()
                 codigo = prod.get("PRO_IN_CODIGO", "")
                 if any(termo in descricao for termo in palavras_chave):
-                    achados.append(f"Código: {codigo} - Descrição: {descricao}")
+                    achados.append(f"Código: {codigo} - Descrição: {descricao}") # Formato mais claro para IA
                     if len(achados) >= 5:
                         break
 
@@ -60,9 +94,26 @@ def processar_mensagem_em_segundo_plano(ultramsg_data, numero, msg):
 {chr(10).join(achados)}
 Por favor, como a Iris, a assistente virtual super animada da Ginger Fragrances, responda ao cliente de forma **super simpática, vibrante e concisa**, listando os códigos e descrições dos produtos encontrados **apenas uma vez, em um formato divertido e fácil de ler**! Convide-o com entusiasmo a perguntar sobre outras maravilhas perfumadas se ainda não for exatamente o que ele busca! ✨"""
                 resposta_final = responder_ia(prompt)
-        else:
-            prompt = f"Mensagem do cliente: '{msg}'. Responda como a Iris, a assistente virtual da Ginger Fragrances! Seja muito animada e acolhedora, e convide o cliente a mergulhar no nosso mundo de fragrâncias, perguntando sobre aromas específicos ou o que mais ele quiser saber! 💖"
+        # Se a mensagem NÃO é sobre fragrâncias/produtos, tenta pesquisa web
+        else: # <-- REATIVADO: Lógica de pesquisa web
+            search_query = msg
+            snippets = perform_google_custom_search(search_query) # <-- CHAMADA À FUNÇÃO DE PESQUISA WEB
+            
+            search_results_text = ""
+            if snippets:
+                search_results_text = "\n".join(snippets)
+
+            if search_results_text:
+                prompt = f"""Mensagem do cliente: '{msg}'.
+                Informações da web encontradas:
+                {search_results_text}
+                
+                Com base na mensagem do cliente e nas informações da web (se relevantes), como a Iris, a assistente virtual da Ginger Fragrances, responda de forma super simpática, animada e útil. Se a pergunta for geral, use as informações da web para responder de forma concisa. Se for sobre fragrâncias e a pesquisa não ajudar a encontrar um produto específico, convide-o a perguntar sobre notas olfativas ou outros detalhes. Lembre-se de sua personalidade única e responda apenas uma vez! ✨"""
+            else:
+                prompt = f"Mensagem do cliente: '{msg}'. Responda como a Iris, a assistente virtual da Ginger Fragrances, se apresentando e convidando-o a perguntar sobre fragrâncias específicas ou notas olfativas. Parece que não encontrei informações adicionais na web para isso no momento. 🤔 Que tal explorar o mundo dos cheirinhos? 😊"
+            
             resposta_final = responder_ia(prompt)
+        # <-- FIM DA REATIVAÇÃO DA LÓGICA DE PESQUISA WEB
 
     except Exception as e:
         logging.error(f"❌ Erro inesperado durante o processamento da mensagem em segundo plano: {e}", exc_info=True)
@@ -123,9 +174,7 @@ def responder_ia(prompt):
         "messages": [
             {
                 "role": "system",
-                # --- CORREÇÃO AQUI: String de múltiplas linhas com aspas triplas ---
-                "content": """🎉 Olá! Eu sou a Iris, a assistente virtual da Ginger Fragrances! ✨ Meu papel é ser sua melhor amiga no mundo dos aromas: sempre educada, prestativa, simpática e com um toque de criatividade! 💖 Fui criada para ajudar nossos incríveis vendedores e funcionários a encontrar rapidinho os códigos das fragrâncias com base nas notas olfativas que os clientes amam, tipo maçã 🍎, bambu 🎋, baunilha 🍦 e muito mais! Sempre que alguém descrever um cheirinho ou uma sensação, minha missão é indicar as fragrâncias que mais se aproximam disso, **listando os códigos correspondentes de forma clara, única, rápida e super eficiente, e sendo o mais concisa possível na resposta. Responda apenas uma vez.** Vamos descobrir o aroma perfeito? 😊"""
-                # --- FIM DA CORREÇÃO ---
+                "content": "🎉 Olá! Eu sou a Iris, a assistente virtual da Ginger Fragrances! ✨ Meu papel é ser sua melhor amiga no mundo dos aromas: sempre educada, prestativa, simpática e com um toque de criatividade! 💖 Fui criada para ajudar nossos incríveis vendedores e funcionários a encontrar rapidinho os códigos das fragrâncias com base nas notas olfativas que os clientes amam, tipo maçã 🍎, bambu 🎋, baunilha 🍦 e muito mais! Além disso, eu posso **realizar pesquisas na web para te ajudar com perguntas mais gerais**! Sempre que alguém descrever um cheirinho ou uma sensação, minha missão é indicar as fragrâncias que mais se aproximam disso, **listando os códigos correspondentes de forma clara, única, rápida e super eficiente, e sendo o mais concisa possível na resposta. Responda apenas uma vez.** Vamos descobrir o aroma perfeito? 😊"
             },
             {"role": "user", "content": prompt}
         ],
