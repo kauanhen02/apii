@@ -17,8 +17,8 @@ ULTRAMSG_TOKEN = os.environ.get("ULTRAMSG_TOKEN")
 
 # --- MUDANÇA AQUI: Nomes das variáveis de ambiente (case-sensitive) ---
 # O nome usado em os.environ.get() DEVE ser EXATAMENTE igual ao nome no Render.com
-Google Search_API_KEY_VAR = os.environ.get("Google_Search_API_KEY")
-Google Search_CX_VAR = os.environ.get("Google_Search_CX")
+Google_Search_API_KEY_VAR = os.environ.get("Google_Search_API_KEY")
+Google_Search_CX_VAR = os.environ.get("Google_Search_CX")
 # --- FIM DA MUDANÇA ---
 
 if not OPENROUTER_KEY:
@@ -30,7 +30,7 @@ if not ULTRAMSG_TOKEN:
     exit(1)
 
 # --- MUDANÇA AQUI: Verifica as novas variáveis (case-sensitive) ---
-if not Google Search_API_KEY_VAR or not Google Search_CX_VAR:
+if not Google_Search_API_KEY_VAR or not Google_Search_CX_VAR:
     logging.error("❌ Variáveis Google Search_API_KEY ou Google Search_CX não definidas. A pesquisa web não funcionará.")
     exit(1)
 
@@ -39,8 +39,8 @@ if not Google Search_API_KEY_VAR or not Google Search_CX_VAR:
 def perform_google_custom_search(query):
     try:
         # Usa as variáveis com os nomes exatos lidos do ambiente
-        service = build("customsearch", "v1", developerKey=Google Search_API_KEY_VAR)
-        res = service.cse().list(q=query, cx=Google Search_CX_VAR, num=3).execute() # num=3 para 3 resultados
+        service = build("customsearch", "v1", developerKey=Google_Search_API_KEY_VAR)
+        res = service.cse().list(q=query, cx=Google_Search_CX_VAR, num=3).execute() # num=3 para 3 resultados
         
         snippets = []
         if 'items' in res:
