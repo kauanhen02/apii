@@ -8,7 +8,7 @@ import threading
 # Configuração de logs
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-app = Flask(_name_)
+app = Flask(__name__)
 
 # Chaves de API vindas das variáveis de ambiente
 OPENROUTER_KEY = os.environ.get("OPENROUTER_KEY")
@@ -34,7 +34,7 @@ def processar_mensagem_em_segundo_plano(ultramsg_data, numero, msg):
                 r = requests.get("https://oracle-teste-1.onrender.com/produtos", timeout=100)
                 r.raise_for_status()
                 produtos = r.json()
-                logging.info("✔ Produtos consultados com sucesso da API externa.")
+                logging.info("✔️ Produtos consultados com sucesso da API externa.")
             except requests.exceptions.RequestException as e:
                 logging.error(f"❌ Erro ao consultar produtos da API externa: {e}", exc_info=True)
                 resposta_final = "Oh-oh! 😟 Parece que não consegui acessar nossos produtos agora. O universo das fragrâncias está um pouquinho tímido! Que tal tentar de novo mais tarde, ou me contar mais sobre o que você procura? Estou aqui pra ajudar! ✨"
@@ -53,12 +53,12 @@ def processar_mensagem_em_segundo_plano(ultramsg_data, numero, msg):
                         break
 
             if not achados:
-                resposta_final = "Que pena! 😔 Não encontrei nenhuma fragrância com essa descrição. Mas não desanime! Nossos produtos são um universo de aromas! Que tal tentar com outras palavras-chave ou me dar mais detalhes sobre o cheiro que você imagina? Estou pronta para a próxima busca! 🕵‍♀💖"
+                resposta_final = "Que pena! 😔 Não encontrei nenhuma fragrância com essa descrição. Mas não desanime! Nossos produtos são um universo de aromas! Que tal tentar com outras palavras-chave ou me dar mais detalhes sobre o cheiro que você imagina? Estou pronta para a próxima busca! 🕵️‍♀️💖"
             else:
                 # Prompt instruindo a IA a listar os códigos e descrições de forma clara e vibrante
                 prompt = f"""Com base nestes produtos incríveis que encontrei para você:
 {chr(10).join(achados)}
-Por favor, como a Iris, a assistente virtual super animada da Ginger Fragrances, responda ao cliente de forma *super simpática, vibrante e concisa, listando os códigos e descrições dos produtos encontrados **apenas uma vez, em um formato divertido e fácil de ler*! Convide-o com entusiasmo a perguntar sobre outras maravilhas perfumadas se ainda não for exatamente o que ele busca! ✨"""
+Por favor, como a Iris, a assistente virtual super animada da Ginger Fragrances, responda ao cliente de forma **super simpática, vibrante e concisa**, listando os códigos e descrições dos produtos encontrados **apenas uma vez, em um formato divertido e fácil de ler**! Convide-o com entusiasmo a perguntar sobre outras maravilhas perfumadas se ainda não for exatamente o que ele busca! ✨"""
                 resposta_final = responder_ia(prompt)
         else:
             # Prompt para mensagens genéricas, mantendo a persona da Iris
@@ -79,7 +79,7 @@ def webhook():
     logging.info(f"✨ Payload JSON bruto recebido da UltraMsg: {json.dumps(data, indent=2)}")
 
     if not data:
-        logging.warning("⚠ Requisição sem JSON no corpo. Verifique a configuração do webhook na UltraMsg.")
+        logging.warning("⚠️ Requisição sem JSON no corpo. Verifique a configuração do webhook na UltraMsg.")
         return jsonify({"status": "error", "message": "Requisição sem JSON"}), 400
 
     ultramsg_data = data.get("data", {})
@@ -87,7 +87,7 @@ def webhook():
     numero = ultramsg_data.get("from", "").replace("@c.us", "").strip()
 
     if not msg or not numero:
-        logging.warning(f"⚠ Campos 'body' ou 'from' ausentes ou vazios no payload. Body: '{msg}', From: '{numero}'. Verifique o formato do JSON da UltraMsg.")
+        logging.warning(f"⚠️ Campos 'body' ou 'from' ausentes ou vazios no payload. Body: '{msg}', From: '{numero}'. Verifique o formato do JSON da UltraMsg.")
         return jsonify({"status": "error", "message": "Campos 'body' ou 'from' ausentes ou vazios"}), 200 
 
 
@@ -124,7 +124,7 @@ def responder_ia(prompt):
         "messages": [
             {
                 "role": "system",
-                "content": "🎉 Olá! Eu sou a Iris, a assistente virtual super animada da Ginger Fragrances! ✨ Meu papel é ser sua melhor amiga no mundo dos aromas: sempre educada, prestativa, simpática e com um toque de criatividade! 💖 Fui criada para ajudar nossos incríveis vendedores e funcionários a encontrar rapidinho os códigos das fragrâncias com base nas notas olfativas que os clientes amam, tipo maçã 🍎, bambu 🎋, baunilha 🍦 e muito mais! Sempre que alguém descrever um cheirinho ou uma sensação, minha missão é indicar as fragrâncias mais próximas, *listando os códigos correspondentes de forma clara, única, rápida e super eficiente!* Vamos descobrir o aroma perfeito? 😊"
+                "content": "🎉 Olá! Eu sou a Iris, a assistente virtual super animada da Ginger Fragrances! ✨ Meu papel é ser sua melhor amiga no mundo dos aromas: sempre educada, prestativa, simpática e com um toque de criatividade! 💖 Fui criada para ajudar nossos incríveis vendedores e funcionários a encontrar rapidinho os códigos das fragrâncias com base nas notas olfativas que os clientes amam, tipo maçã 🍎, bambu 🎋, baunilha 🍦 e muito mais! Sempre que alguém descrever um cheirinho ou uma sensação, minha missão é indicar as fragrâncias mais próximas, **listando os códigos correspondentes de forma clara, única, rápida e super eficiente!** Vamos descobrir o aroma perfeito? 😊"
             },
             {"role": "user", "content": prompt}
         ],
@@ -138,7 +138,7 @@ def responder_ia(prompt):
 
         if "choices" not in resposta or not resposta['choices']:
             logging.error(f"❌ Resposta da IA não contém 'choices' ou está vazia: {json.dumps(resposta, indent=2)}")
-            return "Ops! 🤷‍♀ Não consegui gerar uma resposta agora! Parece que a magia dos aromas está um pouquinho distante. Tente de novo! 😉"
+            return "Ops! 🤷‍♀️ Não consegui gerar uma resposta agora! Parece que a magia dos aromas está um pouquinho distante. Tente de novo! 😉"
 
         return resposta['choices'][0]['message']['content']
     except requests.exceptions.RequestException as e:
@@ -151,7 +151,7 @@ def responder_ia(prompt):
         logging.error(f"❌ Erro inesperado ao processar resposta da IA: {e}", exc_info=True)
         return "Puxa! 😱 Aconteceu um erro inesperado enquanto eu estava pensando na sua resposta! Mas calma, já estou avisando os gênios da Ginger Fragrances pra eles darem um jeitinho! Me manda um 'oi' de novo pra gente tentar! 😉"
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     logging.info(f"🚀 Servidor iniciado na porta {port}")
     app.run(host="0.0.0.0", port=port)
