@@ -17,8 +17,8 @@ ULTRAMSG_TOKEN = os.environ.get("ULTRAMSG_TOKEN")
 
 # --- MUDANÇA AQUI: Nomes das variáveis de ambiente (case-sensitive) ---
 # O nome usado em os.environ.get() DEVE ser EXATAMENTE igual ao nome no Render.com
-Google Search_API_KEY_VAR = os.environ.get("Google Search_API_KEY")
-Google Search_CX_VAR = os.environ.get("Google Search_CX")
+Google Search_API_KEY_VAR = os.environ.get("Google_Search_API_KEY")
+Google Search_CX_VAR = os.environ.get("Google_Search_CX")
 # --- FIM DA MUDANÇA ---
 
 if not OPENROUTER_KEY:
