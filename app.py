@@ -4,22 +4,22 @@ import json
 import os
 import logging
 import threading
-from googleapiclient.discovery import build # <-- REATIVADO: Importa para Google Custom Search API
+from googleapiclient.discovery import build # Importa para Google Custom Search API
 
 # Configuração de logs
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-app = Flask(__name__) # <-- CORRIGIDO: __name__ com dois underscores
+app = Flask(__name__) # CORRIGIDO: __name__ com dois underscores
 
 # Chaves de API vindas das variáveis de ambiente
 OPENROUTER_KEY = os.environ.get("OPENROUTER_KEY")
 ULTRAMSG_TOKEN = os.environ.get("ULTRAMSG_TOKEN")
 
-# --- REATIVADO: Variáveis para a API do Google Custom Search ---
+# --- CORRIGIDO E PADRONIZADO: Variáveis para a API do Google Custom Search ---
 # Os nomes usados aqui DEVEM ser EXATAMENTE iguais aos nomes configurados no Render.com (case-sensitive)
-Search_API_KEY= os.environ.get("Search_API_KEY") # Use este nome no Render.com
-Search_CX = os.environ.get("Search_CX")         # Use este nome no Render.com
-# --- FIM DA REATIVAÇÃO ---
+SEARCH_API_KEY = os.environ.get("Search_API_KEY") # Agora sem "_VAR"
+SEARCH_CX = os.environ.get("Search_CX")         # Agora sem "_VAR"
+# --- FIM DA CORREÇÃO ---
 
 if not OPENROUTER_KEY:
     logging.error("❌ OPENROUTER_KEY não definida. Defina como variável de ambiente para que o app funcione.")
@@ -29,17 +29,18 @@ if not ULTRAMSG_TOKEN:
     logging.error("❌ ULTRAMSG_TOKEN não definida. Defina como variável de ambiente para que o app funcione.")
     exit(1)
 
-# --- REATIVADO: Verificação das chaves do Google Search ---
-if not Search_API_KEYor not Search_CX:
-    logging.error("❌ Variáveis Google Search_API_KEY ou Google Search_CX não definidas. A pesquisa web não funcionará.")
+# --- CORRIGIDO: Verificação das chaves do Google Search (sem erro de sintaxe) ---
+if not SEARCH_API_KEY or not SEARCH_CX: # <-- CORRIGIDO: espaço entre a variável e 'or'
+    logging.error("❌ Variáveis Search_API_KEY ou Search_CX não definidas. A pesquisa web não funcionará.")
     exit(1)
 
 
-# --- REATIVADO: Função para realizar a pesquisa web com Google Custom Search ---
+# Função para realizar a pesquisa web com Google Custom Search
 def perform_google_custom_search(query):
     try:
-        service = build("customsearch", "v1", developerKey=Google Search_API_KEY_VAR)
-        res = service.cse().list(q=query, cx=Search_CX, num=3).execute() # num=3 para 3 resultados
+        # --- CORRIGIDO: Usando a variável corretamente definida ---
+        service = build("customsearch", "v1", developerKey=SEARCH_API_KEY)
+        res = service.cse().list(q=query, cx=SEARCH_CX, num=3).execute() # num=3 para 3 resultados
         
         snippets = []
         if 'items' in res:
@@ -53,7 +54,6 @@ def perform_google_custom_search(query):
     except Exception as e:
         logging.error(f"❌ Erro ao realizar pesquisa com Google Custom Search API: {e}", exc_info=True)
         return []
-# --- FIM DA REATIVAÇÃO ---
 
 
 # Função para processar a mensagem em segundo plano
@@ -95,9 +95,9 @@ def processar_mensagem_em_segundo_plano(ultramsg_data, numero, msg):
 Por favor, como a Iris, a assistente virtual super animada da Ginger Fragrances, responda ao cliente de forma **super simpática, vibrante e concisa**, listando os códigos e descrições dos produtos encontrados **apenas uma vez, em um formato divertido e fácil de ler**! Convide-o com entusiasmo a perguntar sobre outras maravilhas perfumadas se ainda não for exatamente o que ele busca! ✨"""
                 resposta_final = responder_ia(prompt)
         # Se a mensagem NÃO é sobre fragrâncias/produtos, tenta pesquisa web
-        else: # <-- REATIVADO: Lógica de pesquisa web
+        else:
             search_query = msg
-            snippets = perform_google_custom_search(search_query) # <-- CHAMADA À FUNÇÃO DE PESQUISA WEB
+            snippets = perform_google_custom_search(search_query) # Chamada à função de pesquisa web
             
             search_results_text = ""
             if snippets:
@@ -113,7 +113,6 @@ Por favor, como a Iris, a assistente virtual super animada da Ginger Fragrances,
                 prompt = f"Mensagem do cliente: '{msg}'. Responda como a Iris, a assistente virtual da Ginger Fragrances, se apresentando e convidando-o a perguntar sobre fragrâncias específicas ou notas olfativas. Parece que não encontrei informações adicionais na web para isso no momento. 🤔 Que tal explorar o mundo dos cheirinhos? 😊"
             
             resposta_final = responder_ia(prompt)
-        # <-- FIM DA REATIVAÇÃO DA LÓGICA DE PESQUISA WEB
 
     except Exception as e:
         logging.error(f"❌ Erro inesperado durante o processamento da mensagem em segundo plano: {e}", exc_info=True)
