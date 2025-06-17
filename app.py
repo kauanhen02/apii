@@ -6,20 +6,29 @@ import logging
 import threading
 import re # Importa para usar expressões regulares
 from googleapiclient.discovery import build # Importa para Google Custom Search API
+import psycopg2 # <-- NOVO: Importa para PostgreSQL
+from psycopg2 import extras # <-- NOVO: Para funcionalidades extras do psycopg2, embora não usemos execute_values aqui, é boa prática
 
 # Configuração de logs
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-app = Flask(__name__) # Corrigido: __name__ com dois underscores
+app = Flask(__name__) 
 
 # Chaves de API vindas das variáveis de ambiente
 OPENROUTER_KEY = os.environ.get("OPENROUTER_KEY")
 ULTRAMSG_TOKEN = os.environ.get("ULTRAMSG_TOKEN")
 
 # Variáveis para a API do Google Custom Search
-# Os nomes usados aqui DEVEM ser EXATAMENTE iguais aos nomes configurados no Render.com (case-sensitive)
-SEARCH_API_KEY = os.environ.get("Search_API_KEY") # Lendo "Search_API_KEY" do ambiente
-SEARCH_CX = os.environ.get("Search_CX")          # Lendo "Search_CX" do ambiente
+SEARCH_API_KEY = os.environ.get("Search_API_KEY") 
+SEARCH_CX = os.environ.get("Search_CX")          
+
+# --- NOVO: Variáveis para a conexão direta com o PostgreSQL (Neon.tech) ---
+PG_DB_USER = os.environ.get("PG_DB_USER")
+PG_DB_PASSWORD = os.environ.get("PG_DB_PASSWORD")
+PG_DB_HOST = os.environ.get("PG_DB_HOST")
+PG_DB_PORT = os.environ.get("PG_DB_PORT", "5432") 
+PG_DB_NAME = os.environ.get("PG_DB_NAME")
+# --- FIM NOVO ---
 
 # --- VERIFICAÇÕES DE VARIÁVEIS DE AMBIENTE ---
 if not OPENROUTER_KEY:
@@ -30,19 +39,73 @@ if not ULTRAMSG_TOKEN:
     logging.error("❌ ULTRAMSG_TOKEN não definida. Defina como variável de ambiente para que o app funcione.")
     exit(1)
 
-# Verificação das chaves do Google Search.
 if not SEARCH_API_KEY or not SEARCH_CX:
     logging.error("❌ Variáveis Search_API_KEY ou Search_CX não definidas. A pesquisa web não funcionará.")
     exit(1)
 
+# --- NOVO: Verificação das variáveis do PostgreSQL para o BOT PRINCIPAL ---
+if not all([PG_DB_USER, PG_DB_PASSWORD, PG_DB_HOST, PG_DB_NAME]):
+    logging.error("❌ Variáveis de ambiente do PostgreSQL (PG_DB_USER, PG_DB_PASSWORD, PG_DB_HOST, PG_DB_NAME) não definidas para o bot principal. A busca de produtos não funcionará.")
+    exit(1)
+# --- FIM NOVO ---
+
 
 # --- FUNÇÕES AUXILIARES ---
+
+# NOVO: Função para consultar produtos diretamente do PostgreSQL
+def get_products_from_pg(product_code=None, search_term=None):
+    pg_conn = None
+    pg_cursor = None
+    try:
+        # Abertura da conexão a cada chamada da função (simples para Flask, mas otimizar com pool para alta carga)
+        pg_conn = psycopg2.connect(
+            host=PG_DB_HOST,
+            database=PG_DB_NAME,
+            user=PG_DB_USER,
+            password=PG_DB_PASSWORD,
+            port=PG_DB_PORT,
+            sslmode='require' # Neon.tech geralmente exige SSL
+        )
+        pg_cursor = pg_conn.cursor()
+
+        query = "SELECT pro_in_codigo, pro_st_descricao, re_custo FROM produtos"
+        params = []
+        
+        if product_code:
+            # Busca por código específico é muito mais rápida
+            query += " WHERE UPPER(pro_in_codigo) = %s"
+            params.append(product_code.upper())
+            logging.info(f"DB Query: Buscando produto pelo código: {product_code}")
+        elif search_term:
+            # Busca por termo em descrição (usará índice GIN se criado)
+            # Para LIKE '%termo%', PostgreSQL com pg_trgm e GIN é eficiente
+            query += " WHERE LOWER(pro_st_descricao) LIKE %s" 
+            params.append(f"%{search_term.lower()}%")
+            logging.info(f"DB Query: Buscando produtos por termo: {search_term}")
+            # Adiciona um LIMIT para buscas por termo se houver muitos resultados potenciais
+            query += " LIMIT 50" # Limita a 50 resultados para evitar sobrecarga da resposta da IA
+        
+        pg_cursor.execute(query, params)
+        
+        columns = [desc[0] for desc in pg_cursor.description]
+        rows = []
+        for row_data in pg_cursor.fetchall():
+            rows.append(dict(zip(columns, row_data)))
+        
+        logging.info(f"DB Query retornou {len(rows)} linhas.")
+        return rows
+    except psycopg2.Error as e:
+        logging.error(f"❌ Erro ao consultar PostgreSQL DB diretamente: {e}", exc_info=True)
+        return []
+    finally:
+        if pg_cursor: pg_cursor.close()
+        if pg_conn: pg_conn.close()
 
 # Função para realizar a pesquisa web com Google Custom Search
 def perform_google_custom_search(query):
     try:
         service = build("customsearch", "v1", developerKey=SEARCH_API_KEY)
-        res = service.cse().list(q=query, cx=SEARCH_CX, num=3).execute() # num=3 para 3 resultados
+        res = service.cse().list(q=query, cx=SEARCH_CX, num=3).execute() 
         
         snippets = []
         if 'items' in res:
@@ -81,7 +144,7 @@ def responder_ia(prompt):
         "Content-Type": "application/json"
     }
     body = {
-        "model": "google/gemini-2.0-flash-001", # Modelo de IA escolhido
+        "model": "google/gemini-2.0-flash-001", 
         "messages": [
             {
                 "role": "system",
@@ -127,7 +190,7 @@ def processar_mensagem_em_segundo_plano(ultramsg_data, numero, msg):
     resposta_final = ""
 
     try:
-        # --- Lógica para responder sobre os valores da empresa (PRIORIDADE ALTA, pois é uma pergunta direta) ---
+        # --- Lógica para responder sobre os valores da empresa ---
         if any(p in msg for p in ["valores", "nossos valores", "quais os valores", "cultura da empresa", "missao", "princípios"]):
             resposta_final = """🎉 Olá! Que ótimo que você se interessa pelos nossos valores na Ginger Fragrances! ✨ Eles são o coração da nossa empresa e guiam tudo o que fazemos:
 
@@ -140,10 +203,9 @@ def processar_mensagem_em_segundo_plano(ultramsg_data, numero, msg):
 
 Seja bem-vindo(a) à nossa essência! 😊 Quer saber mais sobre nossas fragrâncias incríveis?"""
             enviar_resposta_ultramsg(numero, resposta_final)
-            return # Finaliza o processamento aqui
+            return
 
         # --- Lógica para calcular preço de venda ---
-        # Regex mais flexível para capturar "prXXXXX" e o número do markup (pode ter vírgula ou ponto)
         match_preco = re.search(r"(?:qual o|calcule o)?\s*preço de venda da (pr\d+)\s+com o markup\s+(\d+(?:[.,]\d+)?)", msg)
         
         if match_preco:
@@ -154,16 +216,12 @@ Seja bem-vindo(a) à nossa essência! 😊 Quer saber mais sobre nossas fragrân
                 markup = float(markup_str)
                 fixed_divisor = 0.7442
 
-                # Busca o custo do produto (reusa a chamada à API de produtos)
-                # OTIMIZAÇÃO AQUI: Chama a API de produtos com o parâmetro 'codigo'
-                r = requests.get(f"https://oracle-teste-1.onrender.com/produtos?codigo={product_code_requested}", timeout=100)
-                r.raise_for_status()
-                produtos_encontrados = r.json() # Renomeado para evitar confusão com 'produtos' geral
+                # --- MUDANÇA AQUI: Chamar get_products_from_pg diretamente ---
+                produtos_encontrados = get_products_from_pg(product_code=product_code_requested)
+                # --- FIM DA MUDANÇA ---
 
                 found_product_cost = None
-                # Como a API agora pode filtrar, esperamos 0 ou 1 produto
                 if produtos_encontrados:
-                    # Pega o primeiro produto encontrado (assumindo que o filtro por código é unívoco)
                     prod = produtos_encontrados[0] 
                     cost_value = prod.get("RE_CUSTO")
                     if cost_value is not None:
@@ -185,35 +243,30 @@ Seja bem-vindo(a) à nossa essência! 😊 Quer saber mais sobre nossas fragrân
                     resposta_final = f"Ah, que pena! 😕 Não consegui encontrar o custo para a fragrância {product_code_requested} nos nossos registros. Você digitou o código certinho? Tente novamente ou me diga sobre qual fragrância você gostaria de calcular o preço de venda! ✨"
             except ValueError:
                 resposta_final = "Ops! 🧐 O markup que você informou não parece um número válido. Por favor, use um número (ex: '3' ou '3.5')."
-            except requests.exceptions.RequestException as e:
-                logging.error(f"❌ Erro ao consultar produtos para cálculo de preço: {e}", exc_info=True)
-                resposta_final = "Desculpe, não consegui consultar nossos produtos para calcular o preço agora. Tente novamente mais tarde! 😥"
+            except Exception as e: # Captura erros de DB ou outros agora
+                logging.error(f"❌ Erro ao calcular preço/consultar DB: {e}", exc_info=True)
+                resposta_final = "Desculpe, tive um problema ao calcular o preço agora. Nossos sistemas estão um pouco tímidos! Tente novamente mais tarde! 😥"
 
             enviar_resposta_ultramsg(numero, resposta_final)
             return
 
         # Lógica para busca de fragrâncias por descrição (se o cliente não pediu cálculo nem valores)
         elif any(p in msg for p in ["fragrância", "fragrancia", "produto", "tem com", "contém", "cheiro", "com"]):
-            try:
-                r = requests.get("https://oracle-teste-1.onrender.com/produtos", timeout=100)
-                r.raise_for_status()
-                produtos = r.json()
-                logging.info("✔️ Produtos consultados com sucesso da API externa.")
-            except requests.exceptions.RequestException as e:
-                logging.error(f"❌ Erro ao consultar produtos da API externa: {e}", exc_info=True)
-                resposta_final = "Oh-oh! 😟 Parece que não consegui acessar nossos produtos agora. O universo das fragrâncias está um pouquinho tímido! Que tal tentar de novo mais tarde, ou me contar mais sobre o que você procura? Estou aqui pra ajudar! ✨"
-                enviar_resposta_ultramsg(numero, resposta_final)
-                return
+            # --- MUDANÇA AQUI: Chamar get_products_from_pg diretamente ---
+            # Extrair termo de busca da mensagem do cliente para passar para a função
+            search_term_for_db = " ".join([p for p in msg.split() if len(p) > 2]) # Reusa palavras_chave de forma mais simples
+            produtos = get_products_from_pg(search_term=search_term_for_db)
+            # --- FIM DA MUDANÇA ---
 
-            palavras_chave = [p for p in msg.split() if len(p) > 2]
+            palavras_chave = [p for p in msg.split() if len(p) > 2] # Mantido para lógica de achados
+
             achados = []
-
-            for prod in produtos:
-                descricao = prod.get("PRO_ST_DESCRICAO", "").lower()
-                codigo = prod.get("PRO_IN_CODIGO", "")
+            for prod in produtos: # Itera sobre os produtos retornados do PG
+                descricao = prod.get("pro_st_descricao", "").lower() # <-- Corrigido nome da coluna
+                codigo = prod.get("pro_in_codigo", "")             # <-- Corrigido nome da coluna
                 if any(termo in descricao for termo in palavras_chave):
                     achados.append(f"Código: {codigo} - Descrição: {descricao}")
-                    if len(achados) >= 5:
+                    if len(achados) >= 5: # Limita para o prompt da IA
                         break
 
             if not achados:
