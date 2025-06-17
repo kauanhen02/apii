@@ -4,22 +4,15 @@ import json
 import os
 import logging
 import threading
-from googleapiclient.discovery import build # Importa para Google Custom Search API
 
 # Configuração de logs
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-app = Flask(__name__)
+app = Flask(_name_)
 
 # Chaves de API vindas das variáveis de ambiente
 OPENROUTER_KEY = os.environ.get("OPENROUTER_KEY")
 ULTRAMSG_TOKEN = os.environ.get("ULTRAMSG_TOKEN")
-
-# --- MUDANÇA AQUI: Nomes das variáveis de ambiente (case-sensitive) ---
-# O nome usado em os.environ.get() DEVE ser EXATAMENTE igual ao nome no Render.com
-Google_Search_API_KEY_VAR = os.environ.get("Google_Search_API_KEY")
-Google_Search_CX_VAR = os.environ.get("Google_Search_CX")
-# --- FIM DA MUDANÇA ---
 
 if not OPENROUTER_KEY:
     logging.error("❌ OPENROUTER_KEY não definida. Defina como variável de ambiente para que o app funcione.")
@@ -29,47 +22,19 @@ if not ULTRAMSG_TOKEN:
     logging.error("❌ ULTRAMSG_TOKEN não definida. Defina como variável de ambiente para que o app funcione.")
     exit(1)
 
-# --- MUDANÇA AQUI: Verifica as novas variáveis (case-sensitive) ---
-if not Google_Search_API_KEY_VAR or not Google_Search_CX_VAR:
-    logging.error("❌ Variáveis Google Search_API_KEY ou Google Search_CX não definidas. A pesquisa web não funcionará.")
-    exit(1)
-
-
-# Função para realizar a pesquisa web com Google Custom Search
-def perform_google_custom_search(query):
-    try:
-        # Usa as variáveis com os nomes exatos lidos do ambiente
-        service = build("customsearch", "v1", developerKey=Google_Search_API_KEY_VAR)
-        res = service.cse().list(q=query, cx=Google_Search_CX_VAR, num=3).execute() # num=3 para 3 resultados
-        
-        snippets = []
-        if 'items' in res:
-            for item in res['items']:
-                if 'snippet' in item:
-                    title = item.get('title', 'Título indisponível')
-                    link = item.get('link', 'Link indisponível')
-                    snippet_text = item['snippet']
-                    snippets.append(f"- {title}: {snippet_text} (Fonte: {link})")
-        return snippets
-    except Exception as e:
-        logging.error(f"❌ Erro ao realizar pesquisa com Google Custom Search API: {e}", exc_info=True)
-        return []
-
-
 # Função para processar a mensagem em segundo plano
 def processar_mensagem_em_segundo_plano(ultramsg_data, numero, msg):
     logging.info(f"📩 [Processamento em Segundo Plano] Mensagem recebida de {numero}: '{msg}'")
     resposta_final = ""
 
     try:
-        # Se a mensagem contém termos relacionados a fragrâncias/produtos
         if any(p in msg for p in ["fragrância", "fragrancia", "produto", "tem com", "contém", "cheiro", "com"]):
             try:
                 # Timeout ajustado para 100 segundos
                 r = requests.get("https://oracle-teste-1.onrender.com/produtos", timeout=100)
                 r.raise_for_status()
                 produtos = r.json()
-                logging.info("✔️ Produtos consultados com sucesso da API externa.")
+                logging.info("✔ Produtos consultados com sucesso da API externa.")
             except requests.exceptions.RequestException as e:
                 logging.error(f"❌ Erro ao consultar produtos da API externa: {e}", exc_info=True)
                 resposta_final = "Oh-oh! 😟 Parece que não consegui acessar nossos produtos agora. O universo das fragrâncias está um pouquinho tímido! Que tal tentar de novo mais tarde, ou me contar mais sobre o que você procura? Estou aqui pra ajudar! ✨"
@@ -83,35 +48,21 @@ def processar_mensagem_em_segundo_plano(ultramsg_data, numero, msg):
                 descricao = prod.get("PRO_ST_DESCRICAO", "").lower()
                 codigo = prod.get("PRO_IN_CODIGO", "")
                 if any(termo in descricao for termo in palavras_chave):
-                    achados.append(f"Código: {codigo} - Descrição: {descricao}") # Formato mais claro para IA
+                    achados.append(f"Código: {codigo} - Descrição: {descricao}")
                     if len(achados) >= 5:
                         break
 
             if not achados:
-                resposta_final = "Que pena! 😔 Não encontrei nenhuma fragrância com essa descrição. Mas não desanime! Nossos produtos são um universo de aromas! Que tal tentar com outras palavras-chave ou me dar mais detalhes sobre o cheiro que você imagina? Estou pronta para a próxima busca! 🕵️‍♀️💖"
+                resposta_final = "Que pena! 😔 Não encontrei nenhuma fragrância com essa descrição. Mas não desanime! Nossos produtos são um universo de aromas! Que tal tentar com outras palavras-chave ou me dar mais detalhes sobre o cheiro que você imagina? Estou pronta para a próxima busca! 🕵‍♀💖"
             else:
+                # Prompt instruindo a IA a listar os códigos e descrições de forma clara e vibrante
                 prompt = f"""Com base nestes produtos incríveis que encontrei para você:
 {chr(10).join(achados)}
-Por favor, como a Iris, a assistente virtual super animada da Ginger Fragrances, responda ao cliente de forma **super simpática, vibrante e concisa**, listando os códigos e descrições dos produtos encontrados **apenas uma vez, em um formato divertido e fácil de ler**! Convide-o com entusiasmo a perguntar sobre outras maravilhas perfumadas se ainda não for exatamente o que ele busca! ✨"""
+Por favor, como a Iris, a assistente virtual super animada da Ginger Fragrances, responda ao cliente de forma *super simpática, vibrante e concisa, listando os códigos e descrições dos produtos encontrados **apenas uma vez, em um formato divertido e fácil de ler*! Convide-o com entusiasmo a perguntar sobre outras maravilhas perfumadas se ainda não for exatamente o que ele busca! ✨"""
                 resposta_final = responder_ia(prompt)
-        # Se a mensagem NÃO é sobre fragrâncias/produtos, tenta pesquisa web
         else:
-            search_query = msg
-            snippets = perform_google_custom_search(search_query) # Chama a nova função de pesquisa web
-            
-            search_results_text = ""
-            if snippets:
-                search_results_text = "\n".join(snippets)
-
-            if search_results_text:
-                prompt = f"""Mensagem do cliente: '{msg}'.
-                Informações da web encontradas:
-                {search_results_text}
-                
-                Com base na mensagem do cliente e nas informações da web (se relevantes), como a Iris, a assistente virtual da Ginger Fragrances, responda de forma super simpática, animada e útil. Se a pergunta for geral, use as informações da web para responder de forma concisa. Se for sobre fragrâncias e a pesquisa não ajudar a encontrar um produto específico, convide-o a perguntar sobre notas olfativas ou outros detalhes. Lembre-se de sua personalidade única e responda apenas uma vez! ✨"""
-            else:
-                prompt = f"Mensagem do cliente: '{msg}'. Responda como a Iris, a assistente virtual da Ginger Fragrances, se apresentando e convidando-o a perguntar sobre fragrâncias específicas ou notas olfativas. Parece que não encontrei informações adicionais na web para isso no momento. 🤔 Que tal explorar o mundo dos cheirinhos? 😊"
-            
+            # Prompt para mensagens genéricas, mantendo a persona da Iris
+            prompt = f"Mensagem do cliente: '{msg}'. Responda como a Iris, a assistente virtual da Ginger Fragrances! Seja muito animada e acolhedora, e convide o cliente a mergulhar no nosso mundo de fragrâncias, perguntando sobre aromas específicos ou o que mais ele quiser saber! 💖"
             resposta_final = responder_ia(prompt)
 
     except Exception as e:
@@ -128,15 +79,15 @@ def webhook():
     logging.info(f"✨ Payload JSON bruto recebido da UltraMsg: {json.dumps(data, indent=2)}")
 
     if not data:
-        logging.warning("⚠️ Requisição sem JSON no corpo. Verifique a configuração do webhook na UltraMsg.")
-        return jsonify({"status": "error", "message": "Requisição sem JSON"}), 200 # Alterado para 200 OK para evitar reenvios
+        logging.warning("⚠ Requisição sem JSON no corpo. Verifique a configuração do webhook na UltraMsg.")
+        return jsonify({"status": "error", "message": "Requisição sem JSON"}), 400
 
     ultramsg_data = data.get("data", {})
     msg = ultramsg_data.get("body", "").strip().lower()
     numero = ultramsg_data.get("from", "").replace("@c.us", "").strip()
 
     if not msg or not numero:
-        logging.warning(f"⚠️ Campos 'body' ou 'from' ausentes ou vazios no payload. Body: '{msg}', From: '{numero}'. Verifique o formato do JSON da UltraMsg.")
+        logging.warning(f"⚠ Campos 'body' ou 'from' ausentes ou vazios no payload. Body: '{msg}', From: '{numero}'. Verifique o formato do JSON da UltraMsg.")
         return jsonify({"status": "error", "message": "Campos 'body' ou 'from' ausentes ou vazios"}), 200 
 
 
@@ -169,15 +120,15 @@ def responder_ia(prompt):
         "Content-Type": "application/json"
     }
     body = {
-        "model": "openai/gpt-3.5-turbo",
+        "model": "google/gemini-2.5-pro-preview",
         "messages": [
             {
                 "role": "system",
-                "content": "🎉 Olá! Eu sou a Iris, a assistente virtual da Ginger Fragrances! ✨ Meu papel é ser sua melhor amiga no mundo dos aromas: sempre educada, prestativa, simpática e com um toque de criatividade! 💖 Fui criada para ajudar nossos incríveis vendedores e funcionários a encontrar rapidinho os códigos das fragrâncias com base nas notas olfativas que os clientes amam, tipo maçã 🍎, bambu 🎋, baunilha 🍦 e muito mais! Além disso, eu posso **realizar pesquisas na web para te ajudar com perguntas mais gerais**! Sempre que alguém descrever um cheirinho ou uma sensação, minha missão é indicar as fragrâncias que mais se aproximam disso, **listando os códigos correspondentes de forma clara, única, rápida e super eficiente, e sendo o mais concisa possível na resposta. Responda apenas uma vez.** Vamos descobrir o aroma perfeito? 😊"
+                "content": "🎉 Olá! Eu sou a Iris, a assistente virtual super animada da Ginger Fragrances! ✨ Meu papel é ser sua melhor amiga no mundo dos aromas: sempre educada, prestativa, simpática e com um toque de criatividade! 💖 Fui criada para ajudar nossos incríveis vendedores e funcionários a encontrar rapidinho os códigos das fragrâncias com base nas notas olfativas que os clientes amam, tipo maçã 🍎, bambu 🎋, baunilha 🍦 e muito mais! Sempre que alguém descrever um cheirinho ou uma sensação, minha missão é indicar as fragrâncias mais próximas, *listando os códigos correspondentes de forma clara, única, rápida e super eficiente!* Vamos descobrir o aroma perfeito? 😊"
             },
             {"role": "user", "content": prompt}
         ],
-        "temperature": 0.3 # Ajustado para um equilíbrio entre criatividade e concisão
+        "temperature": 0.4 # Aumentei um pouco para mais criatividade, mas mantendo o controle
     }
 
     try:
@@ -187,7 +138,7 @@ def responder_ia(prompt):
 
         if "choices" not in resposta or not resposta['choices']:
             logging.error(f"❌ Resposta da IA não contém 'choices' ou está vazia: {json.dumps(resposta, indent=2)}")
-            return "Ops! 🤷‍♀️ Não consegui gerar uma resposta agora! Parece que a magia dos aromas está um pouquinho distante. Tente de novo! 😉"
+            return "Ops! 🤷‍♀ Não consegui gerar uma resposta agora! Parece que a magia dos aromas está um pouquinho distante. Tente de novo! 😉"
 
         return resposta['choices'][0]['message']['content']
     except requests.exceptions.RequestException as e:
@@ -200,7 +151,7 @@ def responder_ia(prompt):
         logging.error(f"❌ Erro inesperado ao processar resposta da IA: {e}", exc_info=True)
         return "Puxa! 😱 Aconteceu um erro inesperado enquanto eu estava pensando na sua resposta! Mas calma, já estou avisando os gênios da Ginger Fragrances pra eles darem um jeitinho! Me manda um 'oi' de novo pra gente tentar! 😉"
 
-if __name__ == "__main__":
+if _name_ == "_main_":
     port = int(os.environ.get("PORT", 10000))
     logging.info(f"🚀 Servidor iniciado na porta {port}")
     app.run(host="0.0.0.0", port=port)
