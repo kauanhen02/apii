@@ -308,6 +308,8 @@ Como a Iris, a assistente virtual da Ginger Fragrances, explique que encontrou m
 
         # Lógica para busca de fragrâncias por descrição (se o cliente não pediu cálculo nem valores)
         elif any(p in msg for p in ["fragrância", "fragrancia", "produto", "tem com", "contém", "cheiro", "com"]):
+            # --- MUDANÇA AQUI: Chamar get_products_from_pg diretamente ---
+            # Extrair termo de busca da mensagem do cliente para passar para a função
             search_term_for_db = " ".join([p for p in msg.split() if len(p) > 2]) 
             produtos = get_products_from_pg(search_term=search_term_for_db)
 
@@ -386,7 +388,7 @@ def webhook():
 def enviar_resposta_ultramsg(numero, body):
     try:
         resp = requests.post(
-            "https://api.ultramsg.com/instance126332/messages/chat",
+            "https://api.ultramsg.com/instance121153/messages/chat",
             data={
                 "token": ULTRAMSG_TOKEN,
                 "to": numero,
