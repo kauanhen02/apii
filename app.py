@@ -4,7 +4,7 @@ import json
 import os
 import logging
 import threading
-from Google Search import search # <-- CORREÇÃO: DEVE SER Google Search (com underscore)
+
 
 # Configuração de logs
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
