@@ -4,26 +4,28 @@ import json
 import os
 import logging
 import threading
-import re # <-- NOVO: Importa para usar expressões regulares
+import re # Importa para usar expressões regulares
 from googleapiclient.discovery import build # Importa para Google Custom Search API
 
 # Configuração de logs
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-app = Flask(__name__) # CORRIGIDO: __name__ com dois underscores
+app = Flask(__name__) # Corrigido: __name__ com dois underscores
 
 # Chaves de API vindas das variáveis de ambiente
 OPENROUTER_KEY = os.environ.get("OPENROUTER_KEY")
 ULTRAMSG_TOKEN = os.environ.get("ULTRAMSG_TOKEN")
 
-# Variáveis para a API do Google Custom Search
+# --- Variáveis para a API do Google Custom Search ---
 # Os nomes usados aqui DEVEM ser EXATAMENTE iguais aos nomes configurados no Render.com (case-sensitive)
-Google Search_API_KEY_VAR = os.environ.get("Google Search_API_KEY") # Use este nome no Render.com
-Google Search_CX_VAR = os.environ.get("Google Search_CX")         # Use este nome no Render.com
+SEARCH_API_KEY = os.environ.get("Search_API_KEY") # Lendo "Search_API_KEY" do ambiente
+SEARCH_CX = os.environ.get("Search_CX")          # Lendo "Search_CX" do ambiente
+# --- FIM DA DEFINIÇÃO ---
 
-# NOVO: Variável para o número do RH (se você for usar o roteamento)
-RH_NUMBER = os.environ.get("RH_NUMBER") 
+# Variável para o número do RH (presente apenas se você decidir usar)
+# RH_NUMBER = os.environ.get("RH_NUMBER") 
 
+# --- VERIFICAÇÕES DE VARIÁVEIS DE AMBIENTE ---
 if not OPENROUTER_KEY:
     logging.error("❌ OPENROUTER_KEY não definida. Defina como variável de ambiente para que o app funcione.")
     exit(1)
@@ -32,17 +34,21 @@ if not ULTRAMSG_TOKEN:
     logging.error("❌ ULTRAMSG_TOKEN não definida. Defina como variável de ambiente para que o app funcione.")
     exit(1)
 
-# Verificação das chaves do Google Search. Mantenha isso.
-if not Google Search_API_KEY_VAR or not Google Search_CX_VAR:
-    logging.error("❌ Variáveis Google Search_API_KEY ou Google Search_CX não definidas. A pesquisa web não funcionará.")
+# Verificação das chaves do Google Search.
+# Usando as variáveis com os nomes EXATOS como serão lidas do ambiente.
+if not SEARCH_API_KEY or not SEARCH_CX:
+    logging.error("❌ Variáveis Search_API_KEY ou Search_CX não definidas. A pesquisa web não funcionará.")
     exit(1)
 
+
+# --- FUNÇÕES AUXILIARES ---
 
 # Função para realizar a pesquisa web com Google Custom Search
 def perform_google_custom_search(query):
     try:
-        service = build("customsearch", "v1", developerKey=Google Search_API_KEY_VAR)
-        res = service.cse().list(q=query, cx=Google Search_CX_VAR, num=3).execute() # num=3 para 3 resultados
+        # Usando as variáveis SEARCH_API_KEY e SEARCH_CX
+        service = build("customsearch", "v1", developerKey=SEARCH_API_KEY)
+        res = service.cse().list(q=query, cx=SEARCH_CX, num=3).execute() # num=3 para 3 resultados
         
         snippets = []
         if 'items' in res:
@@ -57,14 +63,71 @@ def perform_google_custom_search(query):
         logging.error(f"❌ Erro ao realizar pesquisa com Google Custom Search API: {e}", exc_info=True)
         return []
 
+# Função para enviar resposta via UltraMsg
+def enviar_resposta_ultramsg(numero, body):
+    try:
+        resp = requests.post(
+            "https://api.ultramsg.com/instance121153/messages/chat",
+            data={
+                "token": ULTRAMSG_TOKEN,
+                "to": numero,
+                "body": body
+            },
+            timeout=10
+        )
+        resp.raise_for_status()
+        logging.info(f"✅ Resposta enviada para {numero}. UltraMsg retornou: {resp.text}")
+    except requests.exceptions.RequestException as e:
+        logging.error(f"❌ Erro ao enviar resposta via UltraMsg para {numero}: {e}", exc_info=True)
 
-# Função para processar a mensagem em segundo plano
+# Função para responder via IA (OpenRouter)
+def responder_ia(prompt):
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_KEY}",
+        "Content-Type": "application/json"
+    }
+    body = {
+        "model": "google/gemini-2.0-flash-001", # Modelo de IA escolhido
+        "messages": [
+            {
+                "role": "system",
+                "content": """🎉 Olá! Eu sou a Iris, a assistente virtual da Ginger Fragrances! ✨ Meu papel é ser sua melhor amiga no mundo dos aromas: sempre educada, prestativa, simpática e com um toque de criatividade! 💖 Fui criada para ajudar nossos incríveis vendedores e funcionários a encontrar rapidinho os códigos das fragrâncias com base nas notas olfativas que os clientes amam, tipo maçã 🍎, bambu 🎋, baunilha 🍦 e muito mais! 
+                Além disso, eu posso **realizar pesquisas na web para te ajudar com perguntas mais gerais** e, se você precisar, posso **calcular o preço de venda das nossas fragrâncias** com o markup que você me disser!
+                Sempre que alguém descrever um cheirinho ou uma sensação, minha missão é indicar as fragrâncias que mais se aproximam disso, **listando os códigos correspondentes de forma clara, única, rápida e super eficiente, e sendo o mais concisa possível na resposta. Responda apenas uma vez.** Vamos descobrir o aroma perfeito? 😊"""
+            },
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.3 # Ajustado para um equilíbrio entre criatividade e concisão
+    }
+
+    try:
+        r = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=body, timeout=30)
+        r.raise_for_status()
+        resposta = r.json()
+
+        if "choices" not in resposta or not resposta['choices']:
+            logging.error(f"❌ Resposta da IA não contém 'choices' ou está vazia: {json.dumps(resposta, indent=2)}")
+            return "Ops! 🤷‍♀️ Não consegui gerar uma resposta agora! Parece que a magia dos aromas está um pouquinho distante. Tente de novo! 😉"
+
+        return resposta['choices'][0]['message']['content']
+    except requests.exceptions.RequestException as e:
+        logging.error(f"❌ Erro ao comunicar com a API da OpenRouter: {e}", exc_info=True)
+        return "Ah, não! 😩 Estou com um pequeno probleminha pra falar com o universo da inteligência artificial agora. Por favor, me dê um minutinho e tente de novo mais tarde! Prometo caprichar na próxima! ✨"
+    except json.JSONDecodeError:
+        logging.error(f"❌ Resposta da IA não é um JSON válido. Status: {r.status_code}, Resposta: {r.text}", exc_info=True)
+        return "Eita! 😲 Recebi uma resposta estranha do meu cérebro virtual! Será que a internet deu uma embolada? Tenta mais uma vez, por favor! 🙏"
+    except Exception as e:
+        logging.error(f"❌ Erro inesperado ao processar resposta da IA: {e}", exc_info=True)
+        return "Puxa! 😱 Aconteceu um erro inesperado enquanto eu estava pensando na sua resposta! Mas calma, já estou avisando os gênios da Ginger Fragrances pra eles darem um jeitinho! Me manda um 'oi' de novo pra gente tentar! 😉"
+
+
+# Função principal de processamento da mensagem (executada em segundo plano)
 def processar_mensagem_em_segundo_plano(ultramsg_data, numero, msg):
     logging.info(f"📩 [Processamento em Segundo Plano] Mensagem recebida de {numero}: '{msg}'")
     resposta_final = ""
 
     try:
-        # --- NOVO: Lógica para calcular preço de venda ---
+        # --- Lógica para calcular preço de venda ---
         # Regex para capturar "prXXXXX" e o número do markup (pode ter vírgula ou ponto)
         match_preco = re.search(r"calcule o preço de venda da (pr\d+)\s+com o markup\s+(\d+(?:[.,]\d+)?)", msg)
         
@@ -83,14 +146,11 @@ def processar_mensagem_em_segundo_plano(ultramsg_data, numero, msg):
 
                 found_product_cost = None
                 for prod in produtos:
-                    # Compara o código do produto (ignorando case e espaços extras)
                     if prod.get("PRO_IN_CODIGO", "").strip().upper() == product_code_requested:
                         cost_value = prod.get("RE_CUSTO")
                         if cost_value is not None:
                             try:
                                 found_product_cost = float(cost_value)
-                                # Se houver múltiplos custos para o mesmo código, pega o primeiro.
-                                # Aprimorar essa lógica pode ser feito na API de produtos se necessário.
                                 break 
                             except (ValueError, TypeError):
                                 logging.warning(f"Custo inválido (não numérico) para {product_code_requested}: {cost_value}")
@@ -114,37 +174,9 @@ def processar_mensagem_em_segundo_plano(ultramsg_data, numero, msg):
                 resposta_final = "Desculpe, não consegui consultar nossos produtos para calcular o preço agora. Tente novamente mais tarde! 😥"
 
             enviar_resposta_ultramsg(numero, resposta_final)
-            return # Finaliza o processamento aqui
-
-        # --- FIM DO NOVO: Lógica para calcular preço de venda ---
-
-
-        # Lógica para rotear para o RH (se você for usar)
-        elif any(p in msg for p in ["falar com rh", "contato rh", "quero rh", "transferir rh", "rh"]):
-            if not RH_NUMBER:
-                resposta_final = "Desculpe, não consegui encontrar o contato do RH no momento. Por favor, tente de novo mais tarde ou pergunte sobre fragrâncias! 😔"
-                enviar_resposta_ultramsg(numero, resposta_final)
-                return
-
-            prompt_para_ia_rh = f"""Um cliente com o número {numero} está tentando entrar em contato com o RH.
-            A mensagem dele foi: '{msg}'.
-            
-            Por favor, como a Iris, a assistente virtual da Ginger Fragrances, resuma em uma frase qual o assunto principal que ele deseja tratar com o RH e formule uma mensagem concisa e clara para ser enviada diretamente ao RH. Inclua o contato do cliente e o assunto. Exemplo de saída:
-            'Olá RH, o cliente com o contato {numero} deseja falar sobre [assunto resumido]. Contato completo: {numero}.'
-            """
-            
-            mensagem_para_rh = responder_ia(prompt_para_ia_rh)
-            
-            if mensagem_para_rh and "Olá RH," in mensagem_para_rh: 
-                enviar_resposta_ultramsg(RH_NUMBER, mensagem_para_rh)
-                resposta_final = f"🎉 Ótimo! Já avisei o RH sobre o seu pedido. Eles entrarão em contato com você no número {numero} assim que possível. A Ginger Fragrances está sempre à disposição para te ajudar! ✨"
-            else:
-                resposta_final = "Desculpe, não consegui entender exatamente o que você gostaria de tratar com o RH. Poderia reformular sua solicitação? 🤔 Ou talvez prefira falar sobre nossas fragrâncias? 😊"
-            
-            enviar_resposta_ultramsg(numero, resposta_final)
             return
 
-        # Lógica existente para fragrâncias (se o cliente não pediu cálculo nem RH)
+        # Lógica para busca de fragrâncias por descrição (se o cliente não pediu cálculo)
         elif any(p in msg for p in ["fragrância", "fragrancia", "produto", "tem com", "contém", "cheiro", "com"]):
             try:
                 r = requests.get("https://oracle-teste-1.onrender.com/produtos", timeout=100)
@@ -175,8 +207,8 @@ def processar_mensagem_em_segundo_plano(ultramsg_data, numero, msg):
 {chr(10).join(achados)}
 Por favor, como a Iris, a assistente virtual super animada da Ginger Fragrances, responda ao cliente de forma **super simpática, vibrante e concisa**, listando os códigos e descrições dos produtos encontrados **apenas uma vez, em um formato divertido e fácil de ler**! Convide-o com entusiasmo a perguntar sobre outras maravilhas perfumadas se ainda não for exatamente o que ele busca! ✨"""
                 resposta_final = responder_ia(prompt)
-        # Lógica para pesquisa web (perguntas gerais que não sejam sobre fragrância ou cálculo de preço)
-        else:
+        # Lógica para pesquisa web (perguntas gerais)
+        else: 
             search_query = msg
             snippets = perform_google_custom_search(search_query) 
             
