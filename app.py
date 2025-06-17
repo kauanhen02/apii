@@ -120,7 +120,7 @@ def responder_ia(prompt):
         "Content-Type": "application/json"
     }
     body = {
-        "model": "openai/gpt-3.5-turbo",
+        "model": "openai/gpt-4",
         "messages": [
             {
                 "role": "system",
