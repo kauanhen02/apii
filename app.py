@@ -57,7 +57,6 @@ def get_products_from_pg(product_code=None, search_term=None):
     pg_conn = None
     pg_cursor = None
     try:
-        # Abertura da conexão a cada chamada da função (simples para Flask, mas otimizar com pool para alta carga)
         pg_conn = psycopg2.connect(
             host=PG_DB_HOST,
             database=PG_DB_NAME,
@@ -72,17 +71,13 @@ def get_products_from_pg(product_code=None, search_term=None):
         params = []
         
         if product_code:
-            # Busca por código específico é muito mais rápida
             query += " WHERE UPPER(pro_in_codigo) = %s"
             params.append(product_code.upper())
             logging.info(f"DB Query: Buscando produto pelo código: {product_code}")
         elif search_term:
-            # Busca por termo em descrição (usará índice GIN se criado)
-            # Para LIKE '%termo%', PostgreSQL com pg_trgm e GIN é eficiente
             query += " WHERE LOWER(pro_st_descricao) LIKE %s" 
             params.append(f"%{search_term.lower()}%")
             logging.info(f"DB Query: Buscando produtos por termo: {search_term}")
-            # Adiciona um LIMIT para buscas por termo se houver muitos resultados potenciais
             query += " LIMIT 50" # Limita a 50 resultados para evitar sobrecarga da resposta da IA
         
         pg_cursor.execute(query, params)
@@ -90,8 +85,6 @@ def get_products_from_pg(product_code=None, search_term=None):
         columns = [desc[0] for desc in pg_cursor.description]
         rows = []
         for row_data in pg_cursor.fetchall():
-            # Aqui, os nomes das colunas virão em minúsculas do PostgreSQL
-            # O `dict(zip(columns, row_data))` já cuida disso, mas a chave do dicionário será minúscula
             rows.append(dict(zip(columns, row_data)))
         
         logging.info(f"DB Query retornou {len(rows)} linhas.")
@@ -151,7 +144,7 @@ def responder_ia(prompt):
             {
                 "role": "system",
                 "content": """🎉 Olá! Eu sou a Iris, a assistente virtual da Ginger Fragrances! ✨ Meu papel é ser sua melhor amiga no mundo dos aromas: sempre educada, prestativa, simpática e com um toque de criatividade! 💖 Fui criada para ajudar nossos incríveis vendedores e funcionários a encontrar rapidinho os códigos das fragrâncias com base nas notas olfativas que os clientes amam, tipo maçã 🍎, bambu 🎋, baunilha 🍦 e muito mais! 
-                Além disso, eu posso **realizar pesquisas na web para te ajudar com perguntas mais gerais** e, se você precisar, posso **calcular o preço de venda das nossas fragrâncias** com o markup que você me disser!
+                Além disso, eu posso **realizar pesquisas na web para te ajudar com perguntas mais gerais**, **informar o custo de uma fragrância específica pelo código OU nome** e, se você precisar, posso **calcular o preço de venda das nossas fragrâncias** com o markup que você me disser!
                 
                 **Nossos Valores na Ginger Fragrances são:**
                 * **FOCO NO RESULTADO / COLABORAÇÃO / EMPATIA**
@@ -203,9 +196,71 @@ def processar_mensagem_em_segundo_plano(ultramsg_data, numero, msg):
 * **EXCELÊNCIA NA EXECUÇÃO:** Fazemos tudo com o máximo de cuidado e qualidade.
 * **RESPEITO ÀS PESSOAS E AO MEIO AMBIENTE:** Cuidamos do nosso time e do nosso planeta.
 
-Seja bem-vindo(a) à nossa essência! 😊 Quer saber mais sobre nossas fragrâncias incríveis?"""
+Seja bem-vindo(a) à nossa essência! 😊 Quer saber mais sobre nossas fragrâncias incríveis!"""
             enviar_resposta_ultramsg(numero, resposta_final)
             return
+
+        # --- NOVO: Lógica para informar o custo de uma PR por CÓDIGO OU NOME ---
+        # Regex para capturar "prXXXXX" OU uma frase que pode ser um nome
+        # Grupo 1: captura o código (pr\d+)
+        # Grupo 2: captura o nome (qualquer coisa depois de "custo da " que não seja pr\d+)
+        match_custo = re.search(r"(?:qual o|qual é o|preço de)?\s*custo da\s+(pr\d+)", msg)
+        match_custo_nome = re.search(r"(?:qual o|qual é o|preço de)?\s*custo da\s+(.+)", msg)
+
+        product_code_requested = None
+        product_name_requested = None
+
+        if match_custo:
+            product_code_requested = match_custo.group(1).upper()
+        elif match_custo_nome and not match_custo_nome.group(1).strip().upper().startswith("PR"): # Garante que não pegue "PR" como nome
+            product_name_requested = match_custo_nome.group(1).strip()
+            
+        if product_code_requested or product_name_requested:
+            produtos_encontrados = []
+            if product_code_requested:
+                produtos_encontrados = get_products_from_pg(product_code=product_code_requested)
+                logging.info(f"DEBUG (Custo por Código): Buscou {product_code_requested}, encontrou {len(produtos_encontrados)}.")
+            elif product_name_requested:
+                produtos_encontrados = get_products_from_pg(search_term=product_name_requested)
+                logging.info(f"DEBUG (Custo por Nome): Buscou '{product_name_requested}', encontrou {len(produtos_encontrados)}.")
+
+            if len(produtos_encontrados) == 1:
+                prod = produtos_encontrados[0]
+                cost_value = prod.get("re_custo") 
+                logging.info(f"DEBUG: Valor de re_custo para {product_code_requested or product_name_requested} antes da conversão (custo direto): '{cost_value}' (Tipo: {type(cost_value)})") 
+                
+                found_product_cost = None
+                if cost_value is not None:
+                    try:
+                        found_product_cost = float(cost_value)
+                    except (ValueError, TypeError):
+                        logging.warning(f"Custo inválido (não numérico) para {product_code_requested or product_name_requested} (custo direto): '{cost_value}'") 
+                
+                if found_product_cost is not None:
+                    prompt = f"""O cliente perguntou 'qual o custo da {product_code_requested or product_name_requested}'.
+                    O custo encontrado para '{product_code_requested or product_name_requested}' é R$ {found_product_cost:.2f}.
+                    
+                    Como a Iris, a assistente virtual da Ginger Fragrances, informe o custo encontrado de forma simpática, clara e objetiva. Mencione o código/nome do produto e o custo. Use emojis!"""
+                    resposta_final = responder_ia(prompt)
+                else:
+                    resposta_final = f"Ah, que pena! 😕 Não consegui encontrar o custo para a fragrância {product_code_requested or product_name_requested} nos nossos registros ou o custo é inválido. Você digitou o código/nome certinho? Tente novamente! ✨"
+            elif len(produtos_encontrados) > 1:
+                list_of_products = []
+                for i, prod in enumerate(produtos_encontrados[:5]): # Limita a lista para a IA
+                    list_of_products.append(f"{i+1}. Código: {prod.get('pro_in_codigo', 'N/A')} - Descrição: {prod.get('pro_st_descricao', 'N/A')}")
+                
+                prompt = f"""O cliente perguntou sobre o custo de '{product_name_requested}', mas encontrei múltiplas fragrâncias com nomes ou descrições similares:
+{chr(10).join(list_of_products)}
+
+Como a Iris, a assistente virtual da Ginger Fragrances, explique que encontrou mais de um produto e peça para o cliente especificar qual ele deseja, fornecendo o código exato (PRXXXXX). Seja simpática e útil. ✨"""
+                resposta_final = responder_ia(prompt)
+
+            else: # Nenhuma PR encontrada por código ou nome
+                resposta_final = f"Que pena! 😔 Não encontrei nenhuma fragrância com o código ou nome '{product_code_requested or product_name_requested}' nos nossos registros. Você digitou o código/nome certinho? Tente novamente com outro termo. Estou aqui para ajudar! 🕵️‍♀️💖"
+            
+            enviar_resposta_ultramsg(numero, resposta_final)
+            return # Finaliza o processamento para esta intenção
+        # --- FIM NOVO ---
 
         # --- Lógica para calcular preço de venda ---
         match_preco = re.search(r"(?:qual o|calcule o)?\s*preço de venda da (pr\d+)\s+com o markup\s+(\d+(?:[.,]\d+)?)", msg)
@@ -218,16 +273,13 @@ Seja bem-vindo(a) à nossa essência! 😊 Quer saber mais sobre nossas fragrân
                 markup = float(markup_str)
                 fixed_divisor = 0.7442
 
-                # --- MUDANÇA AQUI: Chamar get_products_from_pg diretamente ---
                 produtos_encontrados = get_products_from_pg(product_code=product_code_requested)
-                # --- FIM DA MUDANÇA ---
 
                 found_product_cost = None
                 if produtos_encontrados:
                     prod = produtos_encontrados[0] 
-                    # CORRIGIDO AQUI: "re_custo" em minúsculas (nome da coluna retornado pelo psycopg2)
                     cost_value = prod.get("re_custo") 
-                    logging.info(f"DEBUG: Valor de re_custo para {product_code_requested} antes da conversão: '{cost_value}' (Tipo: {type(cost_value)})") # DEBUG LOG
+                    logging.info(f"DEBUG: Valor de re_custo para {product_code_requested} antes da conversão: '{cost_value}' (Tipo: {type(cost_value)})") 
 
                     if cost_value is not None:
                         try:
@@ -248,7 +300,7 @@ Seja bem-vindo(a) à nossa essência! 😊 Quer saber mais sobre nossas fragrân
                     resposta_final = f"Ah, que pena! 😕 Não consegui encontrar o custo para a fragrância {product_code_requested} nos nossos registros. Você digitou o código certinho? Tente novamente ou me diga sobre qual fragrância você gostaria de calcular o preço de venda! ✨"
             except ValueError:
                 resposta_final = "Ops! 🧐 O markup que você informou não parece um número válido. Por favor, use um número (ex: '3' ou '3.5')."
-            except Exception as e: # Captura erros de DB ou outros agora
+            except Exception as e: 
                 logging.error(f"❌ Erro ao calcular preço/consultar DB: {e}", exc_info=True)
                 resposta_final = "Desculpe, tive um problema ao calcular o preço agora. Nossos sistemas estão um pouco tímidos! Tente novamente mais tarde! 😥"
 
@@ -257,22 +309,18 @@ Seja bem-vindo(a) à nossa essência! 😊 Quer saber mais sobre nossas fragrân
 
         # Lógica para busca de fragrâncias por descrição (se o cliente não pediu cálculo nem valores)
         elif any(p in msg for p in ["fragrância", "fragrancia", "produto", "tem com", "contém", "cheiro", "com"]):
-            # --- MUDANÇA AQUI: Chamar get_products_from_pg diretamente ---
-            # Extrair termo de busca da mensagem do cliente para passar para a função
-            search_term_for_db = " ".join([p for p in msg.split() if len(p) > 2]) # Reusa palavras_chave de forma mais simples
+            search_term_for_db = " ".join([p for p in msg.split() if len(p) > 2]) 
             produtos = get_products_from_pg(search_term=search_term_for_db)
-            # --- FIM DA MUDANÇA ---
 
-            palavras_chave = [p for p in msg.split() if len(p) > 2] # Mantido para lógica de achados
+            palavras_chave = [p for p in msg.split() if len(p) > 2] 
 
             achados = []
             for prod in produtos: 
-                # CORRIGIDO AQUI: "pro_st_descricao" e "pro_in_codigo" em minúsculas
                 descricao = prod.get("pro_st_descricao", "").lower() 
                 codigo = prod.get("pro_in_codigo", "")             
                 if any(termo in descricao for termo in palavras_chave):
                     achados.append(f"Código: {codigo} - Descrição: {descricao}")
-                    if len(achados) >= 5: # Limita para o prompt da IA
+                    if len(achados) >= 5: 
                         break
 
             if not achados:
