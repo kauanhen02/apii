@@ -3,6 +3,7 @@ import requests
 import json
 import os
 import logging
+import threading # Importa a biblioteca de threading
 
 # Configuração de logs
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -21,6 +22,54 @@ if not ULTRAMSG_TOKEN:
     logging.error("❌ ULTRAMSG_TOKEN não definida. Defina como variável de ambiente para que o app funcione.")
     exit(1)
 
+# Função para processar a mensagem em segundo plano
+def processar_mensagem_em_segundo_plano(ultramsg_data, numero, msg):
+    logging.info(f"📩 [Processamento em Segundo Plano] Mensagem recebida de {numero}: '{msg}'")
+    resposta_final = ""
+
+    try:
+        if any(p in msg for p in ["fragrância", "fragrancia", "produto", "tem com", "contém", "cheiro", "com"]):
+            try:
+                # Timeout ajustado para 100 segundos
+                r = requests.get("https://oracle-teste-1.onrender.com/produtos", timeout=100)
+                r.raise_for_status()
+                produtos = r.json()
+                logging.info("✔️ Produtos consultados com sucesso da API externa.")
+            except requests.exceptions.RequestException as e:
+                logging.error(f"❌ Erro ao consultar produtos da API externa: {e}", exc_info=True)
+                resposta_final = "Desculpe, não consegui consultar nossos produtos no momento. Por favor, tente novamente mais tarde!"
+                enviar_resposta_ultramsg(numero, resposta_final)
+                return # Sai da função de segundo plano
+
+            palavras_chave = [p for p in msg.split() if len(p) > 2]
+            achados = []
+
+            for prod in produtos:
+                descricao = prod.get("PRO_ST_DESCRICAO", "").lower()
+                codigo = prod.get("PRO_IN_CODIGO", "")
+                if any(termo in descricao for termo in palavras_chave):
+                    achados.append(f"Código: {codigo} - Descrição: {descricao}")
+                    if len(achados) >= 5:
+                        break
+
+            if not achados:
+                resposta_final = "Nenhum produto encontrado com base na sua descrição. Você gostaria de tentar com outras palavras-chave ou nos dar mais detalhes?"
+            else:
+                prompt = f"""Com base nesses produtos:
+{chr(10).join(achados)}
+Por favor, como a Iris, a assistente virtual da Ginger Fragrances, responda ao cliente de forma simpática, **concisa e direta, listando os códigos e descrições dos produtos encontrados apenas uma vez.** Convide-o a perguntar sobre outros produtos se não encontrar o que busca."""
+                resposta_final = responder_ia(prompt)
+        else:
+            prompt = f"Mensagem do cliente: '{msg}'. Responda como a Iris, a assistente virtual da Ginger Fragrances, se apresentando e convidando-o a perguntar sobre fragrâncias específicas ou notas olfativas."
+            resposta_final = responder_ia(prompt)
+
+    except Exception as e:
+        logging.error(f"❌ Erro inesperado durante o processamento da mensagem em segundo plano: {e}", exc_info=True)
+        resposta_final = "Desculpe, ocorreu um erro interno inesperado. Nossos atendentes já foram notificados e em breve resolveremos!"
+
+    enviar_resposta_ultramsg(numero, resposta_final)
+
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.json
@@ -37,53 +86,20 @@ def webhook():
 
     if not msg or not numero:
         logging.warning(f"⚠️ Campos 'body' ou 'from' ausentes ou vazios no payload. Body: '{msg}', From: '{numero}'. Verifique o formato do JSON da UltraMsg.")
-        return jsonify({"status": "error", "message": "Campos 'body' ou 'from' ausentes ou vazios"}), 400
+        # Retorna 200 OK mesmo com dados ausentes, para evitar reenvios da UltraMsg.
+        # A UltraMsg pode estar reenviando porque não está recebendo 200 rápido o suficiente,
+        # mesmo para payloads inválidos.
+        return jsonify({"status": "error", "message": "Campos 'body' ou 'from' ausentes ou vazios"}), 200 
 
-    logging.info(f"📩 Mensagem recebida de {numero}: '{msg}'")
-    resposta_final = ""
 
-    try:
-        if any(p in msg for p in ["fragrância", "fragrancia", "produto", "tem com", "contém", "cheiro", "com"]):
-            try:
-                r = requests.get("https://oracle-teste-1.onrender.com/produtos", timeout=100)
-                r.raise_for_status()
-                produtos = r.json()
-                logging.info("✔️ Produtos consultados com sucesso da API externa.")
-            except requests.exceptions.RequestException as e:
-                logging.error(f"❌ Erro ao consultar produtos da API externa: {e}", exc_info=True)
-                resposta_final = "Desculpe, não consegui consultar nossos produtos no momento. Por favor, tente novamente mais tarde!"
-                enviar_resposta_ultramsg(numero, resposta_final)
-                return jsonify({"status": "ok"})
+    # --- MUDANÇA ESSENCIAL: Inicia o processamento em um thread separado ---
+    # Isso permite que a função webhook retorne imediatamente
+    thread = threading.Thread(target=processar_mensagem_em_segundo_plano, args=(ultramsg_data, numero, msg))
+    thread.start()
+    # --- FIM DA MUDANÇA ESSENCIAL ---
 
-            palavras_chave = [p for p in msg.split() if len(p) > 2]
-            achados = []
-
-            for prod in produtos:
-                descricao = prod.get("PRO_ST_DESCRICAO", "").lower()
-                codigo = prod.get("PRO_IN_CODIGO", "")
-                if any(termo in descricao for termo in palavras_chave):
-                    achados.append(f"Código: {codigo} - Descrição: {descricao}")
-                    if len(achados) >= 5:
-                        break
-
-            if not achados:
-                resposta_final = "Nenhum produto encontrado com base na sua descrição. Você gostaria de tentar com outras palavras-chave ou nos dar mais detalhes?"
-            else:
-                # Prompt instruindo a IA a listar os códigos e descrições de forma clara
-                prompt = f"""Com base nesses produtos:
-{chr(10).join(achados)}
-Por favor, como a Iris, a assistente virtual da Ginger Fragrances, responda ao cliente de forma simpática, **concisa e direta, listando os códigos e descrições dos produtos encontrados apenas uma vez.** Convide-o a perguntar sobre outros produtos se não encontrar o que busca."""
-                resposta_final = responder_ia(prompt)
-        else:
-            prompt = f"Mensagem do cliente: '{msg}'. Responda como a Iris, a assistente virtual da Ginger Fragrances, se apresentando e convidando-o a perguntar sobre fragrâncias específicas ou notas olfativas."
-            resposta_final = responder_ia(prompt)
-
-    except Exception as e:
-        logging.error(f"❌ Erro inesperado durante o processamento da mensagem: {e}", exc_info=True)
-        resposta_final = "Desculpe, ocorreu um erro interno inesperado. Nossos atendentes já foram notificados e em breve resolveremos!"
-
-    enviar_resposta_ultramsg(numero, resposta_final)
-    return jsonify({"status": "ok"})
+    # Retorna 200 OK imediatamente para a UltraMsg
+    return jsonify({"status": "received", "message": "Mensagem recebida e processamento iniciado em segundo plano."}), 200
 
 def enviar_resposta_ultramsg(numero, body):
     try:
@@ -115,7 +131,7 @@ def responder_ia(prompt):
             },
             {"role": "user", "content": prompt}
         ],
-        "temperature": 0.05 # Reduzido para ser ainda mais determinística e evitar variações
+        "temperature": 0.05
     }
 
     try:
