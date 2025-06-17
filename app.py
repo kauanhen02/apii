@@ -119,7 +119,7 @@ def perform_google_custom_search(query):
 def enviar_resposta_ultramsg(numero, body):
     try:
         resp = requests.post(
-            "https://api.ultramsg.com/instance121153/messages/chat",
+            "https://api.ultramsg.com/instance126332/messages/chat", # Instância UltraMsg corrigida
             data={
                 "token": ULTRAMSG_TOKEN,
                 "to": numero,
@@ -200,7 +200,7 @@ Seja bem-vindo(a) à nossa essência! 😊 Quer saber mais sobre nossas fragrân
             enviar_resposta_ultramsg(numero, resposta_final)
             return
 
-        # --- NOVO: Lógica para informar o custo de uma PR por CÓDIGO OU NOME ---
+        # --- Lógica para informar o custo de uma PR por CÓDIGO OU NOME ---
         # Regex para capturar "prXXXXX" OU uma frase que pode ser um nome
         # Grupo 1: captura o código (pr\d+)
         # Grupo 2: captura o nome (qualquer coisa depois de "custo da " que não seja pr\d+)
