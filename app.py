@@ -16,14 +16,10 @@ app = Flask(__name__) # Corrigido: __name__ com dois underscores
 OPENROUTER_KEY = os.environ.get("OPENROUTER_KEY")
 ULTRAMSG_TOKEN = os.environ.get("ULTRAMSG_TOKEN")
 
-# --- Variáveis para a API do Google Custom Search ---
+# Variáveis para a API do Google Custom Search
 # Os nomes usados aqui DEVEM ser EXATAMENTE iguais aos nomes configurados no Render.com (case-sensitive)
 SEARCH_API_KEY = os.environ.get("Search_API_KEY") # Lendo "Search_API_KEY" do ambiente
 SEARCH_CX = os.environ.get("Search_CX")          # Lendo "Search_CX" do ambiente
-# --- FIM DA DEFINIÇÃO ---
-
-# Variável para o número do RH (presente apenas se você decidir usar)
-# RH_NUMBER = os.environ.get("RH_NUMBER") 
 
 # --- VERIFICAÇÕES DE VARIÁVEIS DE AMBIENTE ---
 if not OPENROUTER_KEY:
@@ -35,7 +31,6 @@ if not ULTRAMSG_TOKEN:
     exit(1)
 
 # Verificação das chaves do Google Search.
-# Usando as variáveis com os nomes EXATOS como serão lidas do ambiente.
 if not SEARCH_API_KEY or not SEARCH_CX:
     logging.error("❌ Variáveis Search_API_KEY ou Search_CX não definidas. A pesquisa web não funcionará.")
     exit(1)
@@ -46,7 +41,6 @@ if not SEARCH_API_KEY or not SEARCH_CX:
 # Função para realizar a pesquisa web com Google Custom Search
 def perform_google_custom_search(query):
     try:
-        # Usando as variáveis SEARCH_API_KEY e SEARCH_CX
         service = build("customsearch", "v1", developerKey=SEARCH_API_KEY)
         res = service.cse().list(q=query, cx=SEARCH_CX, num=3).execute() # num=3 para 3 resultados
         
@@ -93,7 +87,13 @@ def responder_ia(prompt):
                 "role": "system",
                 "content": """🎉 Olá! Eu sou a Iris, a assistente virtual da Ginger Fragrances! ✨ Meu papel é ser sua melhor amiga no mundo dos aromas: sempre educada, prestativa, simpática e com um toque de criatividade! 💖 Fui criada para ajudar nossos incríveis vendedores e funcionários a encontrar rapidinho os códigos das fragrâncias com base nas notas olfativas que os clientes amam, tipo maçã 🍎, bambu 🎋, baunilha 🍦 e muito mais! 
                 Além disso, eu posso **realizar pesquisas na web para te ajudar com perguntas mais gerais** e, se você precisar, posso **calcular o preço de venda das nossas fragrâncias** com o markup que você me disser!
-                Sempre que alguém descrever um cheirinho ou uma sensação, minha missão é indicar as fragrâncias que mais se aproximam disso, **listando os códigos correspondentes de forma clara, única, rápida e super eficiente, e sendo o mais concisa possível na resposta. Responda apenas uma vez.** Vamos descobrir o aroma perfeito? 😊"""
+                
+                **Nossos Valores na Ginger Fragrances são:**
+                * **FOCO NO RESULTADO / COLABORAÇÃO / EMPATIA**
+                * **PAIXÃO E CRIATIVIDADE / EXCELÊNCIA NA EXECUÇÃO**
+                * **RESPEITO ÀS PESSOAS E AO MEIO AMBIENTE**
+                
+                Minha missão é indicar as fragrâncias que mais se aproximam do que o cliente busca, **listando os códigos correspondentes de forma clara, única, rápida e super eficiente, e sendo o mais concisa possível na resposta. Responda apenas uma vez.** Vamos descobrir o aroma perfeito? 😊"""
             },
             {"role": "user", "content": prompt}
         ],
