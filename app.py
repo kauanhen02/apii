@@ -12,7 +12,7 @@ from psycopg2 import extras # <-- NOVO: Para funcionalidades extras do psycopg2,
 # Configuração de logs
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-app = Flask(__name__) 
+app = Flask(__name__) # Corrigido: __name__ com dois underscores
 
 # Chaves de API vindas das variáveis de ambiente
 OPENROUTER_KEY = os.environ.get("OPENROUTER_KEY")
@@ -90,6 +90,8 @@ def get_products_from_pg(product_code=None, search_term=None):
         columns = [desc[0] for desc in pg_cursor.description]
         rows = []
         for row_data in pg_cursor.fetchall():
+            # Aqui, os nomes das colunas virão em minúsculas do PostgreSQL
+            # O `dict(zip(columns, row_data))` já cuida disso, mas a chave do dicionário será minúscula
             rows.append(dict(zip(columns, row_data)))
         
         logging.info(f"DB Query retornou {len(rows)} linhas.")
@@ -222,13 +224,17 @@ Seja bem-vindo(a) à nossa essência! 😊 Quer saber mais sobre nossas fragrân
 
                 found_product_cost = None
                 if produtos_encontrados:
+                    # PROVÁVEL MUDANÇA: O `dict(zip(columns, row_data))` retorna chaves em minúsculas
+                    # O nome da coluna no DB é 're_custo' (minúsculas).
                     prod = produtos_encontrados[0] 
-                    cost_value = prod.get("RE_CUSTO")
+                    cost_value = prod.get("re_custo") # <-- CORRIGIDO AQUI: "re_custo" em minúsculas
+                    logging.info(f"DEBUG: Valor de re_custo para {product_code_requested} antes da conversão: '{cost_value}' (Tipo: {type(cost_value)})") # DEBUG LOG
+
                     if cost_value is not None:
                         try:
                             found_product_cost = float(cost_value)
                         except (ValueError, TypeError):
-                            logging.warning(f"Custo inválido (não numérico) para {product_code_requested}: {cost_value}")
+                            logging.warning(f"Custo inválido (não numérico) para {product_code_requested}: '{cost_value}'") 
 
                 if found_product_cost is not None:
                     selling_price = (markup * found_product_cost) / fixed_divisor
@@ -261,9 +267,10 @@ Seja bem-vindo(a) à nossa essência! 😊 Quer saber mais sobre nossas fragrân
             palavras_chave = [p for p in msg.split() if len(p) > 2] # Mantido para lógica de achados
 
             achados = []
-            for prod in produtos: # Itera sobre os produtos retornados do PG
-                descricao = prod.get("pro_st_descricao", "").lower() # <-- Corrigido nome da coluna
-                codigo = prod.get("pro_in_codigo", "")             # <-- Corrigido nome da coluna
+            for prod in produtos: 
+                # PROVÁVEL MUDANÇA: O `dict(zip(columns, row_data))` retorna chaves em minúsculas
+                descricao = prod.get("pro_st_descricao", "").lower() # <-- CORRIGIDO AQUI: "pro_st_descricao" em minúsculas
+                codigo = prod.get("pro_in_codigo", "")             # <-- CORRIGIDO AQUI: "pro_in_codigo" em minúsculas
                 if any(termo in descricao for termo in palavras_chave):
                     achados.append(f"Código: {codigo} - Descrição: {descricao}")
                     if len(achados) >= 5: # Limita para o prompt da IA
@@ -315,7 +322,7 @@ def webhook():
 
     ultramsg_data = data.get("data", {})
     msg = ultramsg_data.get("body", "").strip().lower()
-    numero = ultramsg_data.get("from", "").replace("@c.us", "").strip()
+    numero = ultramsg.get("from", "").replace("@c.us", "").strip()
 
     if not msg or not numero:
         logging.warning(f"⚠️ Campos 'body' ou 'from' ausentes ou vazios no payload. Body: '{msg}', From: '{numero}'. Verifique o formato do JSON da UltraMsg.")
