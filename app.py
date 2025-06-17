@@ -17,8 +17,8 @@ ULTRAMSG_TOKEN = os.environ.get("ULTRAMSG_TOKEN")
 
 # --- REATIVADO: Variáveis para a API do Google Custom Search ---
 # Os nomes usados aqui DEVEM ser EXATAMENTE iguais aos nomes configurados no Render.com (case-sensitive)
-Google Search_API_KEY_VAR = os.environ.get("Google_Search_API_KEY") # Use este nome no Render.com
-Google Search_CX_VAR = os.environ.get("Google_Search_CX")         # Use este nome no Render.com
+Search_API_KEY= os.environ.get("Search_API_KEY") # Use este nome no Render.com
+Search_CX = os.environ.get("Search_CX")         # Use este nome no Render.com
 # --- FIM DA REATIVAÇÃO ---
 
 if not OPENROUTER_KEY:
@@ -30,7 +30,7 @@ if not ULTRAMSG_TOKEN:
     exit(1)
 
 # --- REATIVADO: Verificação das chaves do Google Search ---
-if not Google Search_API_KEY_VAR or not Google Search_CX_VAR:
+if not Search_API_KEYor not Search_CX:
     logging.error("❌ Variáveis Google Search_API_KEY ou Google Search_CX não definidas. A pesquisa web não funcionará.")
     exit(1)
 
@@ -39,7 +39,7 @@ if not Google Search_API_KEY_VAR or not Google Search_CX_VAR:
 def perform_google_custom_search(query):
     try:
         service = build("customsearch", "v1", developerKey=Google Search_API_KEY_VAR)
-        res = service.cse().list(q=query, cx=Google Search_CX_VAR, num=3).execute() # num=3 para 3 resultados
+        res = service.cse().list(q=query, cx=Search_CX, num=3).execute() # num=3 para 3 resultados
         
         snippets = []
         if 'items' in res:
