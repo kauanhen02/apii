@@ -224,10 +224,9 @@ Seja bem-vindo(a) à nossa essência! 😊 Quer saber mais sobre nossas fragrân
 
                 found_product_cost = None
                 if produtos_encontrados:
-                    # PROVÁVEL MUDANÇA: O `dict(zip(columns, row_data))` retorna chaves em minúsculas
-                    # O nome da coluna no DB é 're_custo' (minúsculas).
                     prod = produtos_encontrados[0] 
-                    cost_value = prod.get("re_custo") # <-- CORRIGIDO AQUI: "re_custo" em minúsculas
+                    # CORRIGIDO AQUI: "re_custo" em minúsculas (nome da coluna retornado pelo psycopg2)
+                    cost_value = prod.get("re_custo") 
                     logging.info(f"DEBUG: Valor de re_custo para {product_code_requested} antes da conversão: '{cost_value}' (Tipo: {type(cost_value)})") # DEBUG LOG
 
                     if cost_value is not None:
@@ -268,9 +267,9 @@ Seja bem-vindo(a) à nossa essência! 😊 Quer saber mais sobre nossas fragrân
 
             achados = []
             for prod in produtos: 
-                # PROVÁVEL MUDANÇA: O `dict(zip(columns, row_data))` retorna chaves em minúsculas
-                descricao = prod.get("pro_st_descricao", "").lower() # <-- CORRIGIDO AQUI: "pro_st_descricao" em minúsculas
-                codigo = prod.get("pro_in_codigo", "")             # <-- CORRIGIDO AQUI: "pro_in_codigo" em minúsculas
+                # CORRIGIDO AQUI: "pro_st_descricao" e "pro_in_codigo" em minúsculas
+                descricao = prod.get("pro_st_descricao", "").lower() 
+                codigo = prod.get("pro_in_codigo", "")             
                 if any(termo in descricao for termo in palavras_chave):
                     achados.append(f"Código: {codigo} - Descrição: {descricao}")
                     if len(achados) >= 5: # Limita para o prompt da IA
@@ -322,7 +321,8 @@ def webhook():
 
     ultramsg_data = data.get("data", {})
     msg = ultramsg_data.get("body", "").strip().lower()
-    numero = ultramsg.get("from", "").replace("@c.us", "").strip()
+    # CORRIGIDO AQUI: ultramsg_data.get para 'from'
+    numero = ultramsg_data.get("from", "").replace("@c.us", "").strip() 
 
     if not msg or not numero:
         logging.warning(f"⚠️ Campos 'body' ou 'from' ausentes ou vazios no payload. Body: '{msg}', From: '{numero}'. Verifique o formato do JSON da UltraMsg.")
