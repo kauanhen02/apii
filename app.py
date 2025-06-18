@@ -200,7 +200,7 @@ Seja bem-vindo(a) à nossa essência! 😊 Quer saber mais sobre nossas fragrân
             enviar_resposta_ultramsg(numero, resposta_final)
             return
 
-        # --- Lógica para informar o custo de uma PR por CÓDIGO OU NOME ---
+        # --- NOVO: Lógica para informar o custo de uma PR por CÓDIGO OU NOME ---
         # Regex para capturar "prXXXXX" OU uma frase que pode ser um nome
         # Grupo 1: captura o código (pr\d+)
         # Grupo 2: captura o nome (qualquer coisa depois de "custo da " que não seja pr\d+)
